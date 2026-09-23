@@ -12,6 +12,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	termenv "github.com/muesli/termenv"
+
+	"unreal-agent-tui/internal/settings"
 )
 
 // sizeModel re-flows an existing model to a terminal size via the real
@@ -35,7 +37,7 @@ func TestStatusLineShowsModel(t *testing.T) {
 	}
 
 	// /model sets the model id, visible in the status line.
-	m = sizeModel(t, New(t.TempDir(), "", "", nil), 100, 30)
+	m = sizeModel(t, New(t.TempDir(), settings.Settings{}, nil), 100, 30)
 	m = typeKeys(t, m, "/model claude-sonnet-4-5")
 	current, _ := tea.Model(m).Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = current.(Model)

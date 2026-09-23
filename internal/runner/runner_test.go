@@ -4,11 +4,13 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"unreal-agent-tui/internal/settings"
 	"unreal-agent-tui/internal/testsrv"
 )
 
@@ -25,6 +27,10 @@ func hermeticEnv(t *testing.T, serverURL string) func(string) string {
 			return "test-key"
 		case "OPENAI_BASE_URL":
 			return serverURL
+		case "OPENCODE_PROVIDER":
+			// The global default provider is opencode-go, whose client is
+			// not wired until the provider ticket; tests pin openai.
+			return "openai"
 		}
 		return os.Getenv(key)
 	}
@@ -94,6 +100,61 @@ func TestRunEndToEndFileToolFlow(t *testing.T) {
 	}
 	if !strings.Contains(stdout2.String(), `"session_id":"`+sessionID+`"`) {
 		t.Fatalf("resume did not reuse session %s:\n%s", sessionID, stdout2.String())
+	}
+}
+
+// settingsFileFor writes a settings.json under the fake HOME and returns a
+// getenv fake exposing only that HOME — no provider env vars at all, so the
+// run must take its configuration from the settings file.
+func settingsFileFor(t *testing.T, contents string) func(string) string {
+	t.Helper()
+	home := t.TempDir()
+	path := settings.Path(home)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return func(key string) string {
+		if key == "HOME" {
+			return home
+		}
+		return ""
+	}
+}
+
+func TestRunUsesSettingsFile(t *testing.T) {
+	server := testsrv.New(t)
+	defer server.Close()
+	getenv := settingsFileFor(t, fmt.Sprintf(
+		`{"provider":"openai","api_key":"test-key","base_url":%q}`, server.URL))
+
+	workspace := t.TempDir()
+	var stdout bytes.Buffer
+	code := Run(t.Context(), []string{"-workspace", workspace, `-p`, `create hello.txt with a greeting`}, getenv, &stdout, os.Stderr)
+	if code != 0 {
+		t.Fatalf("Run exit code %d, stdout:\n%s", code, stdout.String())
+	}
+	if _, err := os.ReadFile(filepath.Join(workspace, "hello.txt")); err != nil {
+		t.Fatalf("agent did not write hello.txt: %v\nstdout:\n%s", err, stdout.String())
+	}
+}
+
+func TestRunMalformedSettingsFileErrors(t *testing.T) {
+	getenv := settingsFileFor(t, "{not json")
+	workspace := t.TempDir()
+	var stdout bytes.Buffer
+	code := Run(t.Context(), []string{"-workspace", workspace, `-p`, `hi`}, getenv, &stdout, os.Stderr)
+	if code == 0 {
+		t.Fatalf("Run must fail on malformed settings, stdout:\n%s", stdout.String())
+	}
+	var errEvent errorEvent
+	if err := json.Unmarshal(stdout.Bytes(), &errEvent); err != nil || errEvent.Type != "error" {
+		t.Fatalf("expected error event; stdout:\n%s", stdout.String())
+	}
+	if !strings.Contains(errEvent.Message, settings.Path(getenv("HOME"))) {
+		t.Fatalf("error must name the settings path: %s", errEvent.Message)
 	}
 }
 

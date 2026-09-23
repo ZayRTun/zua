@@ -1,0 +1,3 @@
+# Workspace-local configuration (the global settings file lives in
+# ~/.zua/settings.json — also never commit it anywhere)
+.zua/

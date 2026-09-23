@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	"unreal-agent-tui/internal/settings"
 	"unreal-agent-tui/internal/skills"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -54,9 +55,8 @@ type block struct {
 
 type Model struct {
 	workspace string
-	provider  string
-	model     string
-	turnVerb  string // spinner verb chosen for the running Turn
+	cfg       settings.Settings // resolved configuration (settings file precedence already applied)
+	turnVerb  string            // spinner verb chosen for the running Turn
 
 	viewport   viewport.Model
 	textarea   textarea.Model
@@ -89,7 +89,7 @@ type Model struct {
 	events chan tea.Msg
 }
 
-func New(workspace, provider, model string, skillDirs []string) Model {
+func New(workspace string, cfg settings.Settings, skillDirs []string) Model {
 	absolute, err := filepath.Abs(workspace)
 	if err != nil {
 		absolute = workspace
@@ -106,8 +106,7 @@ func New(workspace, provider, model string, skillDirs []string) Model {
 
 	m := Model{
 		workspace:  absolute,
-		provider:   provider,
-		model:      model,
+		cfg:        cfg,
 		skillDirs:  skillDirs,
 		skills:     discoverSkills(absolute, skillDirs),
 		textarea:   ta,
@@ -171,8 +170,8 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		if m.sessionID == "" {
 			m.sessionID = msg.sessionID
 		}
-		if m.model == "" {
-			m.model = msg.model
+		if m.cfg.Model == "" {
+			m.cfg.Model = msg.model
 		}
 		m.appendBlock(block{kind: blockMeta, text: "session " + short(msg.sessionID) + " · " + msg.model + " · " + m.workspace})
 	case usageMsg:
@@ -372,10 +371,10 @@ func (m *Model) command(input string) []tea.Cmd {
 		}
 	case "/model":
 		if len(fields) == 1 {
-			m.appendBlock(block{kind: blockMeta, text: "model: " + orDefault(m.model, "(provider default)")})
+			m.appendBlock(block{kind: blockMeta, text: "model: " + orDefault(m.cfg.Model, "(provider default)")})
 		} else {
-			m.model = fields[1]
-			m.appendBlock(block{kind: blockMeta, text: "model set to " + m.model})
+			m.cfg.Model = fields[1]
+			m.appendBlock(block{kind: blockMeta, text: "model set to " + m.cfg.Model})
 		}
 	case "/reload":
 		m.skills = discoverSkills(m.workspace, m.skillDirs)
@@ -725,7 +724,7 @@ func (m *Model) reloadReport() string {
 			lines = append(lines, "  skills (user-invoked, /skill:name): "+strings.Join(userOnly, ", "))
 		}
 	}
-	lines = append(lines, "  model: "+orDefault(m.model, "(provider default)"))
+	lines = append(lines, "  model: "+orDefault(m.cfg.Model, "(provider default)"))
 	return strings.Join(lines, "\n")
 }
 
@@ -736,7 +735,7 @@ func (m Model) View() string {
 	if m.picking {
 		return m.viewPicker()
 	}
-	modelLabel := orDefault(m.model, "(default model)")
+	modelLabel := orDefault(m.cfg.Model, "(default model)")
 	sessionLabel := "new"
 	if m.sessionID != "" {
 		sessionLabel = "session " + short(m.sessionID)
@@ -770,7 +769,7 @@ func (m Model) truncateToWidth(s string) string {
 // per-turn/session token usage. The whole line is
 // truncated to the terminal width so narrow terminals never overflow.
 func (m Model) statusLine() string {
-	metadata := dimStyle.Render("  ·  " + orDefault(m.model, "(default model)"))
+	metadata := dimStyle.Render("  ·  " + orDefault(m.cfg.Model, "(default model)"))
 	var status string
 	if m.loading {
 		status = statusStyle.Render(m.spinner.View()+" loading sessions…") + metadata

@@ -23,10 +23,32 @@ go build -o bin/ ./cmd/...
 ## Run
 
 ```sh
-export OPENAI_API_KEY=...            # or OPENROUTER_API_KEY / FIREWORKS_AI_API_KEY
 zua -workspace ./my-project
 zua -workspace ./my-project -provider openrouter -model google/gemini-2.5-pro
 ```
+
+## Configuration
+
+One global settings file, `~/.zua/settings.json` (gitignored — never commit
+your API key):
+
+```json
+{
+  "provider": "opencode-go",
+  "api_key": "...",
+  "base_url": "https://opencode.ai/zen/go/v1",
+  "model": "glm-5.3-flash",
+  "thinking_level": "high"
+}
+```
+
+Every field resolves with the same precedence: CLI flag > `OPENCODE_*`
+environment variable > settings file > built-in default. Env vars:
+`OPENCODE_API_KEY` (the OpenCode Go key; provider-specific keys like
+`OPENAI_API_KEY`/`OPENROUTER_API_KEY` apply to their own provider),
+`OPENCODE_PROVIDER`, `OPENCODE_MODEL`, `OPENCODE_THINKING`, and
+`OPENCODE_BASE_URL` (the latter opencode-go only). A missing file is fine — defaults apply; malformed JSON fails loudly
+naming the file. The key is never printed in the UI or logs.
 
 Keys: `Enter` sends, `Esc` aborts the running turn (or quits when idle), `Ctrl+C` quits.
 
@@ -49,8 +71,8 @@ contextbuilder, session store, LLM clients) and wraps the local operation
 manager so file operations execute durably like shell operations. Sessions
 resume by `session_id`, which the TUI tracks across turns.
 
-Providers: `openai` (default), `commandcode`, `openrouter`, `fireworks`, `ollama` — set via
-request field or `UNREAL_TUI_PROVIDER`; model via `UNREAL_TUI_MODEL` or request.
+Providers: `opencode-go` (default), `openai`, `commandcode`, `openrouter`, `fireworks`, `ollama` — set via
+request field, CLI flag, `OPENCODE_PROVIDER`, or the settings file.
 
 ## UI features
 

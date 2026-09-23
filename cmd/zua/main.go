@@ -11,13 +11,14 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"unreal-agent-tui/internal/settings"
 	"unreal-agent-tui/internal/tui"
 )
 
 func main() {
 	workspace := flag.String("workspace", ".", "workspace directory the agent operates in")
-	model := flag.String("model", "", "model id (default: provider default or UNREAL_TUI_MODEL)")
-	provider := flag.String("provider", "", "llm provider: openai, commandcode, openrouter, fireworks, ollama")
+	model := flag.String("model", "", "model id (default: from ~/.zua/settings.json or provider default)")
+	provider := flag.String("provider", "", "llm provider: opencode-go, openai, commandcode, openrouter, fireworks, ollama")
 	skillDirs := flag.String("skills", "", "comma-separated extra skill directories (beyond <workspace>/.harness/skills)")
 	flag.Parse()
 
@@ -30,11 +31,20 @@ func main() {
 		}
 	}
 
+	// Resolve configuration once (CLI flags > OPENCODE_* env vars >
+	// ~/.zua/settings.json > built-in defaults) and hand it to the UI,
+	// which forwards it with every agent request.
+	cfg, err := settings.Load(settings.Settings{Provider: *provider, Model: *model}, os.Getenv, os.ReadFile)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
+	}
+
 	// Alt screen + no mouse capture: terminals (Ghostty, iTerm2, …) then
 	// translate wheel scroll into arrow keys, which Update routes to the
 	// transcript viewport — and text selection keeps working.
 	program := tea.NewProgram(
-		tui.New(*workspace, *provider, *model, extras),
+		tui.New(*workspace, cfg, extras),
 		tea.WithAltScreen(),
 		tea.WithFilter(tui.CSIFilter),
 	)

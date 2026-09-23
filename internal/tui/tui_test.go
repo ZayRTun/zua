@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/bubbletea"
 
 	"unreal-agent-tui/internal/runner"
+	"unreal-agent-tui/internal/settings"
 	"unreal-agent-tui/internal/skills"
 	"unreal-agent-tui/internal/testsrv"
 )
@@ -24,6 +25,9 @@ func TestReplayAndListSessions(t *testing.T) {
 
 	t.Setenv("OPENAI_API_KEY", "test-key")
 	t.Setenv("OPENAI_BASE_URL", server.URL)
+	// Global default provider is opencode-go (client not wired yet — provider
+	// ticket); pin the openai-family flow this test exercises.
+	t.Setenv("OPENCODE_PROVIDER", "openai")
 
 	workspace := t.TempDir()
 	code := runner.Run(t.Context(), []string{"-workspace", workspace, `-p`, `create hello.txt with a greeting`}, os.Getenv, os.Stderr, os.Stderr)
@@ -115,7 +119,7 @@ func TestEventParserToolLifecycle(t *testing.T) {
 	}
 
 	card := &toolCard{callID: "c1", name: "Edit", argsRaw: `{"path":"main.go","old_text":"a","new_text":"b"}`, status: "ok"}
-	model := New(t.TempDir(), "", "", nil)
+	model := New(t.TempDir(), settings.Settings{}, nil)
 	model.appendBlock(block{kind: blockTool, tool: card})
 	rendered := model.renderToolCard(card, 100)
 	if !strings.Contains(rendered, "main.go") || !strings.Contains(rendered, "- a") || !strings.Contains(rendered, "+ b") {
@@ -127,7 +131,7 @@ func TestEventParserToolLifecycle(t *testing.T) {
 // bug: the event listener must be re-armed on every message path until
 // turnDoneMsg is processed.
 func TestUpdateRearmsListener(t *testing.T) {
-	m := New(t.TempDir(), "", "", nil)
+	m := New(t.TempDir(), settings.Settings{}, nil)
 	m.running = true
 	m.events = make(chan tea.Msg, 16)
 
@@ -214,7 +218,7 @@ func TestReloadDiscovery(t *testing.T) {
 		t.Fatalf("skill body mismatch: %q (%v)", body, err)
 	}
 
-	m := New(dir, "", "", nil)
+	m := New(dir, settings.Settings{}, nil)
 	report := m.reloadReport()
 	if !strings.Contains(report, "deploy-check") || !strings.Contains(report, "SkillUse enabled") {
 		t.Fatalf("reload report missing skill info: %q", report)
@@ -252,7 +256,7 @@ func TestCommandMenuAndUserSkills(t *testing.T) {
 		t.Fatalf("UserOnly flags wrong: %+v", entries)
 	}
 
-	m := New(dir, "", "", []string{extra})
+	m := New(dir, settings.Settings{}, []string{extra})
 	m.textarea.SetValue("/")
 	matches := m.menuMatches()
 	var names []string
@@ -356,7 +360,7 @@ func TestSkillInvocationReseedsSpinner(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m := New(dir, "", "", nil)
+	m := New(dir, settings.Settings{}, nil)
 	cmds := m.invokeSkillCommand("/skill:spin-check with args", "/skill:spin-check")
 	if len(cmds) == 0 {
 		t.Fatal("invokeSkillCommand returned no commands — spinner would freeze")
@@ -374,7 +378,7 @@ func TestSkillInvocationReseedsSpinner(t *testing.T) {
 // ctrl+O verbose toggle, and that fresh cards follow the current mode
 // (primary seam: Update → View).
 func TestCtrlOTogglesVerboseTranscript(t *testing.T) {
-	current := tea.Model(New(t.TempDir(), "", "", nil))
+	current := tea.Model(New(t.TempDir(), settings.Settings{}, nil))
 	current, _ = current.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	m := current.(Model)
 
@@ -434,7 +438,7 @@ func TestCtrlOTogglesVerboseTranscript(t *testing.T) {
 // TestToggleKeepsScrollPosition verifies ctrl+O does not yank the viewport
 // when the user has scrolled away from the tail.
 func TestToggleKeepsScrollPosition(t *testing.T) {
-	current := tea.Model(New(t.TempDir(), "", "", nil))
+	current := tea.Model(New(t.TempDir(), settings.Settings{}, nil))
 	current, _ = current.Update(tea.WindowSizeMsg{Width: 100, Height: 10})
 	m := current.(Model)
 	for i := 0; i < 40; i++ {
@@ -455,7 +459,7 @@ func TestToggleKeepsScrollPosition(t *testing.T) {
 // TestUserAndAssistantNeverCollapse guards the rule that only tool cards
 // participate in the collapsed/verbose toggle.
 func TestUserAndAssistantNeverCollapse(t *testing.T) {
-	current := tea.Model(New(t.TempDir(), "", "", nil))
+	current := tea.Model(New(t.TempDir(), settings.Settings{}, nil))
 	current, _ = current.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	current, _ = current.Update(blockMsg{b: block{kind: blockUser, text: "fix the bug"}})
 	current, _ = current.Update(blockMsg{b: block{kind: blockAssistant, text: "On it."}})

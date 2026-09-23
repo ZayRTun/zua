@@ -23,15 +23,28 @@ func (m *Model) startTurn(prompt string) {
 	if m.sessionID != "" {
 		request["session_id"] = m.sessionID
 	}
-	if m.provider != "" {
-		request["provider"] = m.provider
+	// Resolved configuration travels with the request (stateless agent:
+	// it re-resolves with the same precedence, and these fields win as its
+	// flag tier). The API key goes over stdin, never in argv.
+	if m.cfg.Provider != "" {
+		request["provider"] = m.cfg.Provider
 	}
-	if m.model != "" {
-		request["model"] = m.model
+	if m.cfg.Model != "" {
+		request["model"] = m.cfg.Model
+	}
+	if m.cfg.ThinkingLevel != "" {
+		request["thinking_level"] = m.cfg.ThinkingLevel
+	}
+	if m.cfg.APIKey != "" {
+		request["api_key"] = m.cfg.APIKey
+	}
+	if m.cfg.BaseURL != "" {
+		request["base_url"] = m.cfg.BaseURL
 	}
 	encoded, _ := json.Marshal(request)
 
-	cmd := exec.CommandContext(ctx, agentBinary, "-workspace", m.workspace, string(encoded))
+	cmd := exec.CommandContext(ctx, agentBinary, "-workspace", m.workspace)
+	cmd.Stdin = strings.NewReader(string(encoded) + "\n")
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		m.events <- blockMsg{b: block{kind: blockError, text: err.Error()}}

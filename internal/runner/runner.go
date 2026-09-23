@@ -35,12 +35,15 @@ import (
 	"github.com/unreallabsai/unreal-agent/harness/tool/viewimage"
 
 	"unreal-agent-tui/internal/filetools"
+	"unreal-agent-tui/internal/settings"
 	"unreal-agent-tui/internal/skills"
 )
 
 const (
-	defaultProvider = "openai"
-	defaultModel    = "gpt-6-astra"
+	// runnerDefaultModel is the fallback model for the openai-family
+	// providers when no settings value resolves; the global default
+	// provider/model pair lives in the settings package.
+	runnerDefaultModel = "gpt-6-astra"
 )
 
 const defaultSystemPrompt = `You are an expert pair programmer working directly inside the user's project directory.
@@ -60,6 +63,8 @@ type Request struct {
 	Provider      string    `json:"provider"`
 	ThinkingLevel string    `json:"thinking_level"`
 	SessionID     *string   `json:"session_id"`
+	APIKey        string    `json:"api_key"`
+	BaseURL       string    `json:"base_url"`
 	SkillDirs     []string  `json:"skill_dirs"`
 }
 
@@ -106,7 +111,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, output 
 	flags.SetOutput(stderr)
 	workspace := flags.String("workspace", ".", "workspace directory the agent operates in")
 	prompt := flags.String("p", "", "prompt (or pass a JSON request as the only argument / on stdin)")
-	providerFlag := flags.String("provider", "", "llm provider: openai, commandcode, openrouter, fireworks, ollama")
+	providerFlag := flags.String("provider", "", "llm provider: opencode-go, openai, commandcode, openrouter, fireworks, ollama")
 	modelFlag := flags.String("model", "", "model id")
 	skillsFlag := flags.String("skills", "", "comma-separated extra skill directories (beyond <workspace>/.harness/skills)")
 	if err := flags.Parse(args); err != nil {
@@ -142,7 +147,21 @@ func run(ctx context.Context, args []string, getenv func(string) string, output 
 		return fmt.Errorf("create workspace: %w", err)
 	}
 
-	client, model, closeClient, err := newClient(request, getenv)
+	// Resolve configuration once: request-provided values are the flag
+	// tier, then OPENCODE_* env vars, then ~/.zua/settings.json, then
+	// built-in defaults.
+	cfg, err := settings.Load(settings.Settings{
+		Provider:      request.Provider,
+		Model:         request.Model,
+		APIKey:        request.APIKey,
+		BaseURL:       request.BaseURL,
+		ThinkingLevel: request.ThinkingLevel,
+	}, getenv, os.ReadFile)
+	if err != nil {
+		return err
+	}
+
+	client, model, closeClient, err := newClient(cfg, settings.Path(getenv("HOME")))
 	if err != nil {
 		return err
 	}
@@ -186,7 +205,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, output 
 	settingsPayload, err := json.Marshal(inbox.ControlMessage{
 		Mode: inbox.UpdateSettings,
 		Parameters: inbox.Settings{
-			ReasoningEffort: reasoningEffort(request.ThinkingLevel),
+			ReasoningEffort: reasoningEffort(cfg.ThinkingLevel),
 		},
 	})
 	if err != nil {
@@ -280,7 +299,6 @@ func messageList(request Request) []Message {
 	return nil
 }
 
-
 // systemPrompt returns the request's explicit prompt or the pair-programming
 // default that matches the always-on file tools.
 func systemPrompt(request Request) string {
@@ -324,68 +342,58 @@ func reasoningEffort(level string) llm.ReasoningEffort {
 	}
 }
 
-func newClient(request Request, getenv func(string) string) (llm.Adapter, string, func() error, error) {
-	provider := request.Provider
-	if provider == "" {
-		provider = getenv("UNREAL_TUI_PROVIDER")
-	}
-	if provider == "" {
-		provider = defaultProvider
-	}
-	model := request.Model
-	if model == "" {
-		model = getenv("UNREAL_TUI_MODEL")
+func newClient(cfg settings.Settings, settingsPath string) (llm.Adapter, string, func() error, error) {
+	provider := cfg.Provider
+	model := cfg.Model
+	missingKey := func(envVar string) error {
+		return fmt.Errorf("%s is not set (set api_key in %s)", envVar, settingsPath)
 	}
 	maxAttempts := 4
 	switch provider {
 	case "openai":
-		apiKey := getenv("OPENAI_API_KEY")
-		if apiKey == "" {
-			return nil, "", nil, fmt.Errorf("OPENAI_API_KEY is not set")
+		if cfg.APIKey == "" {
+			return nil, "", nil, missingKey("OPENAI_API_KEY")
 		}
 		if model == "" {
-			model = defaultModel
+			model = runnerDefaultModel
 		}
-		client, err := openai.NewClient(openai.Config{APIKey: apiKey, BaseURL: getenv("OPENAI_BASE_URL"), MaxAttempts: &maxAttempts})
+		client, err := openai.NewClient(openai.Config{APIKey: cfg.APIKey, BaseURL: cfg.BaseURL, MaxAttempts: &maxAttempts})
 		if err != nil {
 			return nil, "", nil, err
 		}
 		return client, model, client.Close, nil
 	case "commandcode":
-		apiKey := getenv("COMMANDCODE_API_KEY")
-		if apiKey == "" {
-			return nil, "", nil, fmt.Errorf("COMMANDCODE_API_KEY is not set")
+		if cfg.APIKey == "" {
+			return nil, "", nil, missingKey("COMMANDCODE_API_KEY")
 		}
 		if model == "" {
 			model = "z-ai/glm-5.3-flash"
 		}
-		client, err := openai.NewClient(openai.Config{APIKey: apiKey, BaseURL: "https://api.commandcode.ai/provider/v1", MaxAttempts: &maxAttempts})
+		client, err := openai.NewClient(openai.Config{APIKey: cfg.APIKey, BaseURL: settings.FirstNonEmpty(cfg.BaseURL, "https://api.commandcode.ai/provider/v1"), MaxAttempts: &maxAttempts})
 		if err != nil {
 			return nil, "", nil, err
 		}
 		return client, model, client.Close, nil
 	case "openrouter":
-		apiKey := getenv("OPENROUTER_API_KEY")
-		if apiKey == "" {
-			return nil, "", nil, fmt.Errorf("OPENROUTER_API_KEY is not set")
+		if cfg.APIKey == "" {
+			return nil, "", nil, missingKey("OPENROUTER_API_KEY")
 		}
 		if model == "" {
-			model = defaultModel
+			model = runnerDefaultModel
 		}
-		client, err := openrouter.NewClient(openrouter.Config{APIKey: apiKey, BaseURL: "https://openrouter.ai/api/v1", MaxAttempts: &maxAttempts})
+		client, err := openrouter.NewClient(openrouter.Config{APIKey: cfg.APIKey, BaseURL: settings.FirstNonEmpty(cfg.BaseURL, "https://openrouter.ai/api/v1"), MaxAttempts: &maxAttempts})
 		if err != nil {
 			return nil, "", nil, err
 		}
 		return client, model, client.Close, nil
 	case "fireworks":
-		apiKey := getenv("FIREWORKS_AI_API_KEY")
-		if apiKey == "" {
-			return nil, "", nil, fmt.Errorf("FIREWORKS_AI_API_KEY is not set")
+		if cfg.APIKey == "" {
+			return nil, "", nil, missingKey("FIREWORKS_AI_API_KEY")
 		}
 		if model == "" {
-			model = defaultModel
+			model = runnerDefaultModel
 		}
-		client, err := fireworks.NewClient(fireworks.Config{APIKey: apiKey, BaseURL: "https://api.fireworks.ai/inference/v1", MaxAttempts: &maxAttempts})
+		client, err := fireworks.NewClient(fireworks.Config{APIKey: cfg.APIKey, BaseURL: settings.FirstNonEmpty(cfg.BaseURL, "https://api.fireworks.ai/inference/v1"), MaxAttempts: &maxAttempts})
 		if err != nil {
 			return nil, "", nil, err
 		}
@@ -394,13 +402,16 @@ func newClient(request Request, getenv func(string) string) (llm.Adapter, string
 		if model == "" {
 			model = "qwen3:8b"
 		}
-		client, err := ollama.NewClient(ollama.Config{BaseURL: ollama.BaseURL, MaxAttempts: &maxAttempts})
+		client, err := ollama.NewClient(ollama.Config{BaseURL: settings.FirstNonEmpty(cfg.BaseURL, ollama.BaseURL), MaxAttempts: &maxAttempts})
 		if err != nil {
 			return nil, "", nil, err
 		}
 		return client, model, client.Close, nil
 	default:
-		return nil, "", nil, fmt.Errorf("unknown provider %q (want openai, commandcode, openrouter, fireworks, or ollama)", provider)
+		if provider == settings.DefaultProvider {
+			return nil, "", nil, fmt.Errorf("provider %q is not wired yet (the OpenCode Go adapter ships with the provider ticket); set OPENCODE_PROVIDER or the settings provider to a supported one", provider)
+		}
+		return nil, "", nil, fmt.Errorf("unknown provider %q (want opencode-go, openai, commandcode, openrouter, fireworks, or ollama)", provider)
 	}
 }
 

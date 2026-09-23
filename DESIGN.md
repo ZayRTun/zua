@@ -178,3 +178,20 @@ Go subscription makes per-token cost optimization moot, so the modes die):
   mode flag, no `file_tools` request field, no mode label anywhere.
 - **Usage in the status line**: the TUI accumulates per-turn and session
   input/output tokens from model_response usage.
+
+## Settings File (added with the settings ticket, issue #10)
+
+- **One global `~/.zua/settings.json`** holds `provider`, `api_key`,
+  `base_url`, `model`, and `thinking_level`; one shared loader serves both
+  binaries. Every field resolves with the same precedence: CLI flag /
+  request value > `OPENCODE_*` env var > settings file > built-in default.
+- **Defaults are provider-aware**: provider `opencode-go`, base URL
+  `https://opencode.ai/zen/go/v1`, model `glm-5.3-flash`, thinking level
+  `high`. When another provider is resolved, its model/base URL fall back to
+  the client's own defaults.
+- **The key never travels in argv**: the TUI passes the resolved
+  configuration in the JSON request on the agent's stdin; the error for a
+  missing key names the settings file; errors never contain file content
+  (tested). The settings path is gitignored.
+- The TUI forwards `/model` overrides with the next request; resolved
+  values win at the request tier of the runner's own precedence chain.

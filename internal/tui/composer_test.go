@@ -7,12 +7,14 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	"unreal-agent-tui/internal/settings"
 )
 
 // resize returns a resized model ready for View assertions.
 func resize(t *testing.T, width, height int) Model {
 	t.Helper()
-	current := tea.Model(New(t.TempDir(), "", "", nil))
+	current := tea.Model(New(t.TempDir(), settings.Settings{}, nil))
 	current, _ = current.Update(tea.WindowSizeMsg{Width: width, Height: height})
 	return current.(Model)
 }
