@@ -37,8 +37,8 @@ func TestMenuOpensOnLeadingSlash(t *testing.T) {
 		}
 	}
 	// The menu is anchored above the Composer.
-	if menuPos, boxPos := strings.Index(view, "↑/↓ select"), strings.Index(view, "╭"); menuPos == -1 || boxPos == -1 || menuPos > boxPos {
-		t.Fatalf("menu must render above the Composer (menu=%d box=%d):\n%s", menuPos, boxPos, view)
+	if menuPos, promptPos := strings.Index(view, "↑/↓ select"), strings.Index(view, "❯"); menuPos == -1 || promptPos == -1 || menuPos > promptPos {
+		t.Fatalf("menu must render above the Composer rule (menu=%d prompt=%d):\n%s", menuPos, promptPos, view)
 	}
 }
 

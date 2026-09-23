@@ -95,10 +95,12 @@ func New(workspace string, cfg settings.Settings, skillDirs []string) Model {
 		absolute = workspace
 	}
 	ta := textarea.New()
-	ta.Placeholder = "Describe a task… (/help for commands, Esc to abort/quit, Ctrl+C to quit)"
-	ta.Prompt = "> "
+	// The Composer draws its own accent ❯ prompt; the textarea itself stays
+	// bare — no prompt glyph, no line-number gutter, no placeholder.
+	ta.Prompt = ""
+	ta.ShowLineNumbers = false
 	ta.CharLimit = 32_000
-	// 78 = 80-wide terminal minus the two border columns of the Composer.
+	// 78 = 80-wide terminal minus the two columns of the ❯ prompt.
 	ta.SetWidth(78)
 	ta.SetHeight(1)
 	ta.Focus()
@@ -157,7 +159,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.viewport.Width = msg.Width
-		m.textarea.SetWidth(max(msg.Width-2, 1)) // -2: Composer border columns
+		m.textarea.SetWidth(max(msg.Width-2, 1)) // -2: ❯ prompt columns
 		m.setViewportHeight()
 		m.refresh()
 	case spinner.TickMsg:
@@ -645,11 +647,12 @@ func (m *Model) clampMenuIndex(matches []menuItem) {
 }
 
 // setViewportHeight sizes the transcript viewport to whatever the bottom
-// section (status, Command Menu, Composer, hint line) actually needs. Nothing
-// here may assume a fixed total height: the Command Menu anchors above the
-// box and grows it, so the height is always derived from the parts.
+// section (status, Command Menu, Composer) actually needs. Nothing here may
+// assume a fixed total height: the Command Menu anchors above the Composer
+// and grows the bottom section, so the height is always derived from the
+// parts.
 func (m *Model) setViewportHeight() {
-	m.viewport.Height = max(m.height-2-m.bottomHeight(), 1) // -2: header + its divider
+	m.viewport.Height = max(m.height-m.bottomHeight(), 1)
 }
 
 // bottomHeight reports the rendered height of everything below the viewport.
@@ -659,25 +662,16 @@ func (m Model) bottomHeight() int {
 }
 
 // bottomParts renders everything below the transcript viewport, top to
-// bottom: divider, status, Command Menu (when open), Composer, hint line.
-// This one list defines both the layout and its height (bottomHeight), so
-// the Command Menu can later anchor above the box with no hardcoded total.
+// bottom: status line, Command Menu (when open), Composer. This one list
+// defines both the layout and its height (bottomHeight), so the Command
+// Menu can anchor above the Composer with no hardcoded total.
 func (m Model) bottomParts() []string {
-	parts := []string{strings.Repeat("─", max(m.width, 1)), m.statusLine()}
+	parts := []string{m.statusLine()}
 	if m.menuVisible() {
 		parts = append(parts, m.viewMenu())
 	}
 	parts = append(parts, m.renderComposer())
-	if m.hintsVisible() {
-		parts = append(parts, m.renderHints())
-	}
 	return parts
-}
-
-// hintsVisible reports whether the contextual hint line under the Composer
-// should render — it hides while a Turn runs so the status area stays clean.
-func (m Model) hintsVisible() bool {
-	return !m.running
 }
 
 func (m *Model) refresh() {
@@ -732,22 +726,17 @@ func (m Model) View() string {
 	if m.width == 0 {
 		return "starting…"
 	}
+	bottom := lipgloss.JoinVertical(lipgloss.Left, m.bottomParts()...)
 	if m.picking {
-		return m.viewPicker()
+		return lipgloss.JoinVertical(lipgloss.Left,
+			m.renderHeader(),
+			m.viewPicker(),
+			bottom,
+		)
 	}
-	modelLabel := orDefault(m.cfg.Model, "(default model)")
-	sessionLabel := "new"
-	if m.sessionID != "" {
-		sessionLabel = "session " + short(m.sessionID)
-	}
-	header := titleStyle.Render("unreal-agent") +
-		dimStyle.Render("  "+m.workspace+" · "+modelLabel+" · "+sessionLabel)
-	return lipgloss.JoinVertical(lipgloss.Left,
-		m.truncateToWidth(header),
-		strings.Repeat("─", max(m.width, 1)),
-		m.viewport.View(),
-		lipgloss.JoinVertical(lipgloss.Left, m.bottomParts()...),
-	)
+	// Transcript view: no header, no divider — the conversation gets the
+	// full viewport (issue #12).
+	return lipgloss.JoinVertical(lipgloss.Left, m.viewport.View(), bottom)
 }
 
 // insertNewline adds a newline at the cursor and re-flows the Composer.
@@ -763,6 +752,46 @@ func (m *Model) insertNewline() {
 // terminals never overflow.
 func (m Model) truncateToWidth(s string) string {
 	return truncate.String(s, uint(max(m.width, 1)))
+}
+
+// ---- Header ----
+
+// logoArt is zua's pixel-mascot: an original blocky critter drawn from
+// solid █ cells. The eye and leg gaps are the terminal's own background
+// showing through, the same trick the reference launcher's mascot uses.
+const logoArt = `████████████
+██  ████  ██
+████████████
+  ██████████
+  ██████████
+  ██    ██
+ ████  ████`
+
+// headerStats is the launcher's live stats line: model · thinking level ·
+// skills count. It reads current state on every render, so /reload's
+// re-discovery shows up the next time the launcher opens.
+func (m Model) headerStats() string {
+	return orDefault(m.cfg.Model, "(default model)") +
+		" · " + orDefault(m.cfg.ThinkingLevel, "high") +
+		" · " + itoa(int64(len(m.skills))) + " skills"
+}
+
+// renderHeader draws the launcher Header: the zua logo art next to the app
+// name, the workspace path, and the stats line. Every line clips to the
+// terminal width so narrow terminals never wrap or overflow.
+func (m Model) renderHeader() string {
+	logo := titleStyle.Render(logoArt)
+	right := lipgloss.JoinVertical(lipgloss.Left,
+		titleStyle.Render("zua"),
+		dimStyle.Render(m.workspace),
+		dimStyle.Render(m.headerStats()),
+	)
+	header := lipgloss.JoinHorizontal(lipgloss.Top, logo, "  ", right)
+	lines := strings.Split(header, "\n")
+	for index := range lines {
+		lines[index] = m.truncateToWidth(lines[index])
+	}
+	return strings.Join(lines, "\n")
 }
 
 // statusLine renders the working/idle state, the current model id, and
@@ -809,34 +838,24 @@ func pickVerb() string {
 // ---- Composer ----
 
 const (
-	dimBorder   = lipgloss.Color("8")  // unfocused border
-	focusBorder = lipgloss.Color("12") // focused border (accent)
+	accentColor = lipgloss.Color("12") // the single accent
+	dimColor    = lipgloss.Color("8")  // dim gray
 )
 
-// composerBorderStyleFor is the rounded Composer border: dim while
-// unfocused, brightening to the accent color on focus.
-func composerBorderStyleFor(focused bool) lipgloss.Style {
-	border := dimBorder
-	if focused {
-		border = focusBorder
-	}
-	return lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(border)
-}
+// composerPromptStyle is the accent ❯ prompt; composerRuleStyle is the dim
+// thin rule above and below the input (glossary: Composer).
+var (
+	composerPromptStyle = lipgloss.NewStyle().Foreground(accentColor)
+	composerRuleStyle   = lipgloss.NewStyle().Foreground(dimColor)
+)
 
-// renderComposer draws the rounded Composer around the textarea.
+// renderComposer draws the Composer: a thin rule above, the accent ❯ prompt
+// with the input, and a rule below — no border box, no placeholder, no
+// hint line.
 func (m Model) renderComposer() string {
-	return composerBorderStyleFor(m.textarea.Focused()).Render(m.textarea.View())
-}
-
-// hintText is the contextual hint line under the Composer.
-const hintText = "shift+enter newline · ctrl+o verbose · /help commands"
-
-// renderHints renders the dim hint line below the Composer, clipped to the
-// terminal width so narrow sizes never wrap or overflow.
-func (m Model) renderHints() string {
-	return m.truncateToWidth(dimStyle.Render(hintText))
+	rule := m.truncateToWidth(composerRuleStyle.Render(strings.Repeat("─", max(m.width, 1))))
+	line := composerPromptStyle.Render("❯ ") + m.textarea.View()
+	return lipgloss.JoinVertical(lipgloss.Left, rule, line, rule)
 }
 
 // viewMenu renders the Command Menu above the Composer: filtered

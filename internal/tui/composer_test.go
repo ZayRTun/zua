@@ -19,69 +19,73 @@ func resize(t *testing.T, width, height int) Model {
 	return current.(Model)
 }
 
-// TestComposerRendersRoundedBox checks the input renders as a rounded
-// bordered box with the "> " prompt inside (primary seam: Update → View).
-func TestComposerRendersRoundedBox(t *testing.T) {
+// TestComposerRendersRules checks the Composer is a thin rule above, the
+// accent ❯ prompt with the input, and a rule below — never a rounded
+// border box (primary seam: Update → View).
+func TestComposerRendersRules(t *testing.T) {
 	m := resize(t, 100, 30)
+	m.textarea.SetValue("build the thing")
 	view := stripANSI(m.View())
-	for _, want := range []string{"╭", "╰", "╯", "> "} {
-		if !strings.Contains(view, want) {
-			t.Fatalf("composer missing %q:\n%s", want, view)
+	if strings.Contains(view, "╭") || strings.Contains(view, "╰") || strings.Contains(view, "╯") {
+		t.Fatalf("composer must not render a rounded border:\n%s", view)
+	}
+	if !strings.Contains(view, "❯") || !strings.Contains(view, "build the thing") {
+		t.Fatalf("composer missing the ❯ prompt with input:\n%s", view)
+	}
+	// The prompt line is exactly the ❯ prompt plus the text: no textarea
+	// prompt glyph or line-number gutter may leak in front of the text.
+	promptLine := composerPromptLine(t, m)
+	if got := strings.TrimRight(stripANSI(promptLine), " "); got != "❯ build the thing" {
+		t.Fatalf("composer prompt line = %q, want %q", got, "❯ build the thing")
+	}
+	rules := 0
+	for _, line := range strings.Split(view, "\n") {
+		if strings.TrimRight(stripANSI(line), " ") == strings.Repeat("─", 100) {
+			rules++
 		}
+	}
+	if rules != 2 {
+		t.Fatalf("composer needs exactly one rule above and one below, found %d full-width rules:\n%s", rules, view)
 	}
 }
 
-// TestComposerBorderBrightensOnFocus checks the border is dim when the
-// textarea is unfocused and the brighter accent when focused. Rendered ANSI
-// colors can't be asserted here (lipgloss degrades to no color without a
-// TTY), so the color decision is pinned on the style helper and the View
-// structure on the box itself.
-func TestComposerBorderBrightensOnFocus(t *testing.T) {
-	m := resize(t, 100, 30)
-	if !m.textarea.Focused() {
-		t.Fatal("setup: textarea should start focused")
-	}
-	if got := composerBorderStyleFor(m.textarea.Focused()).GetBorderTopForeground(); got != focusBorder {
-		t.Fatalf("focused border %v, want %v", got, focusBorder)
-	}
-	m.textarea.Blur()
-	if got := composerBorderStyleFor(m.textarea.Focused()).GetBorderTopForeground(); got != dimBorder {
-		t.Fatalf("blurred border %v, want %v", got, dimBorder)
-	}
-	view := stripANSI(m.View())
-	for _, want := range []string{"╭", "╰"} {
-		if !strings.Contains(view, want) {
-			t.Fatalf("blurred view lost the rounded box:\n%s", view)
+// composerPromptLine returns the View line carrying the ❯ prompt.
+func composerPromptLine(t *testing.T, m Model) string {
+	t.Helper()
+	for _, line := range strings.Split(m.View(), "\n") {
+		if strings.Contains(stripANSI(line), "❯") {
+			return line
 		}
+	}
+	t.Fatalf("no composer prompt line in view:\n%s", stripANSI(m.View()))
+	return ""
+}
+
+// TestComposerPromptAccent pins the palette: accent ❯ prompt, dim rules
+// (colors are asserted on the style helpers because lipgloss degrades to
+// Ascii without a TTY).
+func TestComposerPromptAccent(t *testing.T) {
+	if got := composerPromptStyle.GetForeground(); got != accentColor {
+		t.Fatalf("composer prompt %v, want accent %v", got, accentColor)
+	}
+	if got := composerRuleStyle.GetForeground(); got != dimColor {
+		t.Fatalf("composer rule %v, want dim %v", got, dimColor)
 	}
 }
 
-// TestHintLineIdleAndRunning checks the contextual hint line appears below
-// the box when idle and hides while a Turn runs. The turn starts through the
-// real Update path (Enter) so the whole seam is exercised.
-func TestHintLineIdleAndRunning(t *testing.T) {
+// TestComposerNoPlaceholderNoHint checks the glossary rules: no placeholder
+// text and no hint line — the Usage Line (issue #13) replaces the hints.
+func TestComposerNoPlaceholderNoHint(t *testing.T) {
 	m := resize(t, 100, 30)
-	const hint = "shift+enter newline · ctrl+o verbose · /help commands"
-	idle := stripANSI(m.View())
-	if !strings.Contains(idle, hint) {
-		t.Fatalf("idle view missing hint line:\n%s", idle)
+	if m.textarea.Placeholder != "" {
+		t.Fatalf("placeholder must be empty, got %q", m.textarea.Placeholder)
 	}
-	if strings.Contains(idle, hint+"\n"+hint) {
-		t.Fatal("hint line rendered twice")
+	view := stripANSI(m.View())
+	if strings.Contains(view, "Describe a task") {
+		t.Fatalf("placeholder text leaked into the view:\n%s", view)
 	}
-
-	m.textarea.SetValue("a prompt")
-	current, _ := tea.Model(m).Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = current.(Model)
-	if !m.running || m.hintsVisible() {
-		t.Fatalf("turn start state wrong: running=%v hintsVisible=%v", m.running, m.hintsVisible())
-	}
-	running := stripANSI(m.View())
-	if strings.Contains(running, hint) {
-		t.Fatalf("hint line must hide while a turn runs:\n%s", running)
-	}
-	if !strings.Contains(running, "╭") {
-		t.Fatalf("running view lost the composer:\n%s", running)
+	if strings.Contains(view, "shift+enter newline") {
+		t.Fatalf("hint line must not render:\n%s", view)
 	}
 }
 
@@ -166,57 +170,30 @@ func TestCSIFilterPassthrough(t *testing.T) {
 	}
 }
 
-// TestComposerRespectsWidth checks the box and hint line never overflow a
-// narrow terminal. (The header is a separate concern, out of scope here.)
+// TestComposerRespectsWidth checks the composer's rules, prompt line, and
+// status line never overflow a narrow terminal.
 func TestComposerRespectsWidth(t *testing.T) {
 	m := resize(t, 40, 20)
 	view := m.View()
-	var boxLines []string
-	var hintLine string
+	rules := countFullWidthRules(t, view, 40)
+	if rules != 2 {
+		t.Fatalf("want the composer's two rules at width 40, found %d:\n%s", rules, stripANSI(view))
+	}
 	for _, line := range strings.Split(view, "\n") {
-		plain := stripANSI(line)
-		switch {
-		case strings.ContainsAny(plain, "╭╰") || strings.HasPrefix(plain, "> "):
-			boxLines = append(boxLines, line)
-		case strings.Contains(plain, "shift+enter newline"):
-			hintLine = line
+		plain := strings.TrimRight(stripANSI(line), " ")
+		if width := lipgloss.Width(plain); width > 40 {
+			t.Fatalf("view line %d wide exceeds terminal width 40: %q", width, plain)
 		}
-	}
-	if len(boxLines) == 0 {
-		t.Fatalf("no composer lines found in view:\n%s", stripANSI(view))
-	}
-	for _, line := range boxLines {
-		// JoinVertical pads shorter lines with trailing spaces up to the
-		// widest line (the header's workspace path); that padding is
-		// cosmetic, so measure the actual rendered content.
-		if width := lipgloss.Width(strings.TrimRight(stripANSI(line), " ")); width > 40 {
-			t.Fatalf("box line %d wide exceeds terminal width 40: %q", width, stripANSI(line))
-		}
-	}
-	if width := lipgloss.Width(strings.TrimRight(stripANSI(hintLine), " ")); width > 40 {
-		t.Fatalf("hint line %d wide exceeds terminal width 40: %q", width, stripANSI(hintLine))
 	}
 }
 
 // TestLayoutHeightIsDynamic pins the structural requirement: the bottom
-// section's height is computed from its parts (editor lines, hint, palette),
-// never hardcoded, so the viewport absorbs the difference.
+// section's height is computed from its parts (status line, Command Menu,
+// Composer rules + editor lines), never hardcoded, so the viewport absorbs
+// the difference.
 func TestLayoutHeightIsDynamic(t *testing.T) {
+	// A taller editor takes lines from the viewport (rules = editor + 2).
 	m := resize(t, 100, 30)
-	idleHeight := m.viewport.Height
-
-	// Hiding the hint line (turn running) gives one line back to the viewport.
-	// The turn start's refresh re-flows the layout in the live app; a resize
-	// exercises the same Update path here.
-	m.running = true
-	current, _ := tea.Model(m).Update(tea.WindowSizeMsg{Width: 100, Height: 30})
-	m = current.(Model)
-	if m.viewport.Height != idleHeight+1 {
-		t.Fatalf("viewport height %d with hint hidden, want %d", m.viewport.Height, idleHeight+1)
-	}
-
-	// A taller editor takes lines from the viewport (box = editor + border).
-	m = resize(t, 100, 30)
 	base := m.viewport.Height
 	m.textarea.SetValue("one\ntwo\nthree")
 	m.resizeEditor()

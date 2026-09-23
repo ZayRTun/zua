@@ -217,3 +217,27 @@ Go subscription makes per-token cost optimization moot, so the modes die):
   cache-write is not reported by chat-completions (stays 0).
 - **Thinking levels**: `low`/`high`/`max` pass through as `reasoning_effort`;
   `medium` clamps to `high`, `xhigh` clamps to `max`, empty defaults `high`.
+
+## Chrome reskin (issue #12, T5)
+
+- **Launcher Header**: the resume screen (the launcher) gains a Header — an
+  original zua pixel-mascot (`logoArt`, accent-12 block critter with eye/leg
+  gaps left to the terminal background), the bold app name, the workspace
+  path, and a live stats line `model · thinking level · N skills` exactly in
+  that format (per spec; the count derives from `m.skills` on every render).
+  Every header and picker line clips to the terminal width.
+- **Transcript view loses its header and the full-width divider** — the
+  conversation gets the reclaimed viewport height. Only the Composer's own
+  rules remain as full-width lines.
+- **Composer**: thin rule above, accent `❯ ` prompt (accentColor 12), input,
+  thin rule below (dimColor 8). No rounded border, no placeholder text, no
+  hint line — the Usage Line (issue #13) replaces the hints. Editor width is
+  terminal width minus the two `❯ ` prompt columns; multi-line input grows
+  the editor between the rules (prompt glyph only on the first line).
+- **The old status line temporarily survives** below the transcript/top of
+  the launcher until issue #13 replaces it with the Usage Line.
+- **Launcher interaction is unchanged from pi's semantics**: the picker
+  consumes keys while open (select/Esc); slash commands like /reload are
+  typed in the transcript view, and the header stats re-derive live on the
+  next launcher render — that is what "skills count refreshes on /reload"
+  means here.

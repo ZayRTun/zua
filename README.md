@@ -27,6 +27,14 @@ zua -workspace ./my-project
 zua -workspace ./my-project -provider openrouter -model google/gemini-2.5-pro
 ```
 
+The launcher shows the zua Header — pixel-mascot logo, workspace path, and a
+live stats line (`glm-5.3-flash · high · N skills`) — with the session picker
+below it. In the transcript view the conversation takes the whole screen: no
+header, no divider. The Composer is a thin rule, an accent `❯` prompt, the
+input, and a rule below — no border box, no placeholder, no hint line
+(`/help` in the Composer lists commands; ctrl+o toggles the Verbose
+Transcript).
+
 ## Configuration
 
 One global settings file, `~/.zua/settings.json` (gitignored — never commit

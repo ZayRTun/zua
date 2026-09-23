@@ -481,6 +481,9 @@ func (m Model) viewPicker() string {
 			out = append(out, line)
 		}
 	}
+	for index := range out {
+		out[index] = m.truncateToWidth(out[index])
+	}
 	return lipgloss.JoinVertical(lipgloss.Left, out...)
 }
 
