@@ -54,18 +54,47 @@ func TestReplayAndListSessions(t *testing.T) {
 	if id != entry.id {
 		t.Fatalf("replayed id %q, want %q", id, entry.id)
 	}
-	var sawUser, sawAssistant bool
-	for _, b := range blocks {
+	var sawUser, sawAssistant, sawTool bool
+	var toolIndex, assistantIndex int
+	for index, b := range blocks {
 		switch b.kind {
 		case blockUser:
 			sawUser = strings.Contains(b.text, "create hello.txt")
 		case blockAssistant:
 			sawAssistant = strings.Contains(b.text, "done")
+			assistantIndex = index
+		case blockTool:
+			if b.tool != nil && b.tool.name == "Write" && b.tool.status == "ok" {
+				sawTool = true
+				toolIndex = index
+				// A replayed card must render exactly like a live one.
+				got := stripANSI(collapsedEntry(b.tool, 200))
+				if !strings.Contains(got, "⏺ Write: hello.txt") || !strings.Contains(got, "⎿ ok") {
+					t.Fatalf("replayed card renders wrong: %q", got)
+				}
+			}
 		}
 	}
 	if !sawUser || !sawAssistant {
 		t.Fatalf("replay missing user=%v assistant=%v blocks", sawUser, sawAssistant)
 	}
+	if !sawTool {
+		t.Fatalf("replay missing the Write tool card; kinds: %v", blockKinds(blocks))
+	}
+	if !(toolIndex < assistantIndex) {
+		t.Fatalf("replayed card order wrong: tool=%d assistant=%d", toolIndex, assistantIndex)
+	}
+}
+
+func blockKinds(blocks []block) []string {
+	out := make([]string, len(blocks))
+	for index, b := range blocks {
+		out[index] = fmt.Sprintf("kind=%d", b.kind)
+		if b.tool != nil {
+			out[index] += " tool=" + b.tool.name + " status=" + b.tool.status
+		}
+	}
+	return out
 }
 
 func TestEventParserToolLifecycle(t *testing.T) {
@@ -344,5 +373,109 @@ func TestSkillInvocationReseedsSpinner(t *testing.T) {
 	}
 	if !m.running {
 		t.Fatal("skill invocation did not start a turn")
+	}
+}
+
+// TestCtrlOTogglesVerboseTranscript covers the collapsed-entry default, the
+// ctrl+O verbose toggle, and that fresh cards follow the current mode
+// (primary seam: Update → View).
+func TestCtrlOTogglesVerboseTranscript(t *testing.T) {
+	current := tea.Model(New(t.TempDir(), "", "", false, nil))
+	current, _ = current.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	m := current.(Model)
+
+	// A completed Edit card arrives through the normal message path.
+	current, _ = current.Update(toolStatusMsg{
+		callID:  "c1",
+		name:    "Edit",
+		argsRaw: `{"path":"main.go","old_text":"a","new_text":"b"}`,
+		status:  "ok",
+	})
+	m = current.(Model)
+	collapsed := stripANSI(m.View())
+	if !strings.Contains(collapsed, "⏺ Edit: main.go +1/-1 ⎿ ok") {
+		t.Fatalf("collapsed transcript missing one-line entry:\n%s", collapsed)
+	}
+	if strings.Contains(collapsed, "- a") || strings.Contains(collapsed, "+ b") {
+		t.Fatalf("collapsed transcript must not show the diff body:\n%s", collapsed)
+	}
+
+	// ctrl+O expands every card in place.
+	current, _ = current.Update(tea.KeyMsg{Type: tea.KeyCtrlO})
+	m = current.(Model)
+	verbose := stripANSI(m.View())
+	if !strings.Contains(verbose, "- a") || !strings.Contains(verbose, "+ b") {
+		t.Fatalf("verbose transcript missing diff body:\n%s", verbose)
+	}
+	if strings.Contains(verbose, "⏺ Edit: main.go +1/-1 ⎿ ok") {
+		t.Fatalf("verbose transcript still shows the collapsed entry:\n%s", verbose)
+	}
+
+	// Fresh cards arriving while verbose render expanded and keep the mode.
+	current, _ = current.Update(toolStatusMsg{
+		callID:  "c2",
+		name:    "Edit",
+		argsRaw: `{"path":"other.go","old_text":"x","new_text":"y"}`,
+		status:  "ok",
+	})
+	verbose = stripANSI(current.(Model).View())
+	if !strings.Contains(verbose, "- x") {
+		t.Fatalf("fresh card did not follow verbose mode:\n%s", verbose)
+	}
+	if current.(Model).verbose != true {
+		t.Fatal("fresh card flipped the verbose mode")
+	}
+
+	// ctrl+O collapses again.
+	current, _ = current.Update(tea.KeyMsg{Type: tea.KeyCtrlO})
+	collapsed = stripANSI(current.(Model).View())
+	if !strings.Contains(collapsed, "⏺ Edit: other.go +1/-1 ⎿ ok") {
+		t.Fatalf("collapsed toggle lost the second card:\n%s", collapsed)
+	}
+	if strings.Contains(collapsed, "- x") {
+		t.Fatalf("collapsed toggle still shows diff body:\n%s", collapsed)
+	}
+}
+
+// TestToggleKeepsScrollPosition verifies ctrl+O does not yank the viewport
+// when the user has scrolled away from the tail.
+func TestToggleKeepsScrollPosition(t *testing.T) {
+	current := tea.Model(New(t.TempDir(), "", "", false, nil))
+	current, _ = current.Update(tea.WindowSizeMsg{Width: 100, Height: 10})
+	m := current.(Model)
+	for i := 0; i < 40; i++ {
+		m.appendBlock(block{kind: blockUser, text: fmt.Sprintf("prompt %d", i)})
+	}
+	m.viewport.GotoBottom()
+	m.viewport.SetYOffset(5)
+	if m.viewport.AtBottom() {
+		t.Fatal("setup: viewport should be scrolled up")
+	}
+	current, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlO})
+	m = current.(Model)
+	if m.viewport.YOffset != 5 {
+		t.Fatalf("scroll position lost on toggle: YOffset=%d", m.viewport.YOffset)
+	}
+}
+
+// TestUserAndAssistantNeverCollapse guards the rule that only tool cards
+// participate in the collapsed/verbose toggle.
+func TestUserAndAssistantNeverCollapse(t *testing.T) {
+	current := tea.Model(New(t.TempDir(), "", "", false, nil))
+	current, _ = current.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	current, _ = current.Update(blockMsg{b: block{kind: blockUser, text: "fix the bug"}})
+	current, _ = current.Update(blockMsg{b: block{kind: blockAssistant, text: "On it."}})
+	m := current.(Model)
+	for _, want := range []string{"❯ fix the bug", "On it."} {
+		if !strings.Contains(stripANSI(m.View()), want) {
+			t.Fatalf("collapsed view dropped %q:\n%s", want, stripANSI(m.View()))
+		}
+	}
+	current, _ = current.Update(tea.KeyMsg{Type: tea.KeyCtrlO})
+	m = current.(Model)
+	for _, want := range []string{"❯ fix the bug", "On it."} {
+		if !strings.Contains(stripANSI(m.View()), want) {
+			t.Fatalf("verbose view dropped %q:\n%s", want, stripANSI(m.View()))
+		}
 	}
 }

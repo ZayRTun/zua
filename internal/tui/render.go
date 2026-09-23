@@ -27,8 +27,9 @@ func (m *Model) renderTranscript() string {
 func (m *Model) renderBlock(b *block, width int) string {
 	// Per-block cache: between events only one or two blocks change, so most
 	// renders are pure cache hits (keeps long sessions from re-wrapping
-	// everything on every tool status).
-	if b.rendered != "" && b.width == width {
+	// everything on every tool status). The key includes the verbose flag so
+	// the ctrl+O toggle re-renders dual-rendered blocks exactly once.
+	if b.rendered != "" && b.width == width && b.verbose == m.verbose {
 		return b.rendered
 	}
 	var out string
@@ -46,9 +47,15 @@ func (m *Model) renderBlock(b *block, width int) string {
 	case blockDivider:
 		out = dimStyle.Render("── " + b.text + " " + strings.Repeat("─", max(width-len(b.text)-4, 3)))
 	case blockTool:
-		out = m.renderToolCard(b.tool, width)
+		// Tool cards are dual-rendered: one-line Collapsed Entry by default,
+		// full card in the Verbose Transcript (ctrl+O).
+		if m.verbose {
+			out = m.renderToolCard(b.tool, width)
+		} else {
+			out = collapsedEntry(b.tool, width)
+		}
 	}
-	b.rendered, b.width = out, width
+	b.rendered, b.width, b.verbose = out, width, m.verbose
 	return out
 }
 
@@ -162,9 +169,7 @@ func outputLines(output string, width int) []string {
 }
 
 func renderDiff(oldText, newText string, width int) []string {
-	oldLines := strings.Split(strings.TrimRight(oldText, "\n"), "\n")
-	newLines := strings.Split(strings.TrimRight(newText, "\n"), "\n")
-	lines := hunkDiff(oldLines, newLines, width)
+	lines := hunkDiff(splitDiffLines(oldText), splitDiffLines(newText), width)
 	const maxDiffLines = 24
 	if len(lines) > maxDiffLines {
 		hidden := len(lines) - maxDiffLines
@@ -176,16 +181,43 @@ func renderDiff(oldText, newText string, width int) []string {
 	return lines
 }
 
-// hunkDiff computes a line-level diff (LCS-based) and renders it as hunks:
-// changed lines with up to 2 lines of surrounding context, collapsing runs of
-// unchanged lines.
-func hunkDiff(oldLines, newLines []string, width int) []string {
-	const maxInput = 400 // cap DP size; beyond this fall back to whole-block
-	if len(oldLines) > maxInput || len(newLines) > maxInput {
-		return formatChanges(oldLines, newLines, width)
+// diffOp kinds classify one step of the LCS edit script.
+const (
+	opSame = iota
+	opDel
+	opAdd
+)
+
+type diffOp struct {
+	kind int
+	text string
+}
+
+// splitDiffLines splits diff input into lines the way every diff renderer
+// expects (trailing newline dropped, empty text is one empty line).
+func splitDiffLines(text string) []string {
+	return strings.Split(strings.TrimRight(text, "\n"), "\n")
+}
+
+// diffOpsMaxInput caps the DP table size; inputs beyond it use the
+// whole-block fallback (all removals, then all additions).
+const diffOpsMaxInput = 400
+
+// diffOps walks the LCS table for two line slices and returns the edit
+// script: unchanged, deleted (-), and added (+) ops in order. Inputs beyond
+// the DP cap produce the fallback script.
+func diffOps(oldLines, newLines []string) []diffOp {
+	if len(oldLines) > diffOpsMaxInput || len(newLines) > diffOpsMaxInput {
+		ops := make([]diffOp, 0, len(oldLines)+len(newLines))
+		for _, line := range oldLines {
+			ops = append(ops, diffOp{opDel, line})
+		}
+		for _, line := range newLines {
+			ops = append(ops, diffOp{opAdd, line})
+		}
+		return ops
 	}
 
-	// LCS table.
 	rows, cols := len(oldLines), len(newLines)
 	table := make([][]int, rows+1)
 	for i := range table {
@@ -201,37 +233,38 @@ func hunkDiff(oldLines, newLines []string, width int) []string {
 		}
 	}
 
-	// Walk to ops: unchanged, deleted (-), added (+).
-	const (
-		opSame = iota
-		opDel
-		opAdd
-	)
-	type op struct {
-		kind int
-		text string
-	}
-	var ops []op
+	var ops []diffOp
 	i, j := 0, 0
 	for i < rows && j < cols {
 		switch {
 		case oldLines[i] == newLines[j]:
-			ops = append(ops, op{opSame, oldLines[i]})
+			ops = append(ops, diffOp{opSame, oldLines[i]})
 			i, j = i+1, j+1
 		case table[i+1][j] >= table[i][j+1]:
-			ops = append(ops, op{opDel, oldLines[i]})
+			ops = append(ops, diffOp{opDel, oldLines[i]})
 			i++
 		default:
-			ops = append(ops, op{opAdd, newLines[j]})
+			ops = append(ops, diffOp{opAdd, newLines[j]})
 			j++
 		}
 	}
 	for ; i < rows; i++ {
-		ops = append(ops, op{opDel, oldLines[i]})
+		ops = append(ops, diffOp{opDel, oldLines[i]})
 	}
 	for ; j < cols; j++ {
-		ops = append(ops, op{opAdd, newLines[j]})
+		ops = append(ops, diffOp{opAdd, newLines[j]})
 	}
+	return ops
+}
+
+// hunkDiff computes a line-level diff (LCS-based) and renders it as hunks:
+// changed lines with up to 2 lines of surrounding context, collapsing runs of
+// unchanged lines.
+func hunkDiff(oldLines, newLines []string, width int) []string {
+	if len(oldLines) > diffOpsMaxInput || len(newLines) > diffOpsMaxInput {
+		return formatChanges(oldLines, newLines, width)
+	}
+	ops := diffOps(oldLines, newLines)
 
 	// Emit hunks: up to 2 context lines around each change, gaps collapsed.
 	const context = 2
@@ -278,7 +311,85 @@ func hunkDiff(oldLines, newLines []string, width int) []string {
 	return lines
 }
 
-// formatChanges is the fallback for very large edits: show all removals then
+// countDiff returns the +added/-removed line counts of an edit, computed from
+// the decoded arguments only (no file I/O). Inputs beyond the DP cap count as
+// whole-block replacement.
+func countDiff(oldText, newText string) (added, removed int) {
+	for _, op := range diffOps(splitDiffLines(oldText), splitDiffLines(newText)) {
+		switch op.kind {
+		case opAdd:
+			added++
+		case opDel:
+			removed++
+		}
+	}
+	return added, removed
+}
+
+// ---- Collapsed Entries ----
+
+// collapsedEntry renders one tool card as the single-line receipt form:
+// ⏺ Tool(args) ⎿ outcome. Failed calls keep a visible error marker; the
+// detail half is computed from the already-decoded arguments (no I/O).
+func collapsedEntry(card *toolCard, width int) string {
+	if card == nil {
+		return ""
+	}
+	symbol, style := "⏺", toolStyle
+	outcome, outcomeStyle := card.status, dimStyle
+	switch card.status {
+	case "ok":
+		outcome = "ok"
+	case "failed", "canceled":
+		symbol, style = "✗", errorStyle
+		outcome, outcomeStyle = card.status, errorStyle
+	case "", "running":
+		outcome, outcomeStyle = "running…", dimStyle
+	}
+
+	args := parseArgs(card.argsRaw)
+	var detail string
+	switch card.name {
+	case "Bash":
+		detail = "($ " + collapse(argString(args, "command"), max(width-16, 10)) + ")"
+	case "Read":
+		detail = ": " + argString(args, "path")
+		if limit := argString(args, "limit"); limit != "" {
+			detail += " (+" + limit + " lines)"
+		}
+	case "Write":
+		detail = ": " + argString(args, "path") + " +" + humanBytes(len(argString(args, "content")))
+	case "Edit":
+		added, removed := countDiff(argString(args, "old_text"), argString(args, "new_text"))
+		detail = fmt.Sprintf(": %s +%d/-%d", argString(args, "path"), added, removed)
+	}
+
+	line := style.Render(symbol+" "+orDefault(card.name, "tool")) + toolStyle.Render(detail)
+	line += dimStyle.Render(" ⎿ ") + outcomeStyle.Render(outcome)
+	if card.status == "failed" || card.status == "canceled" {
+		reason := card.errText
+		if reason == "" && card.exitCode != 0 {
+			reason = fmt.Sprintf("exit %d", card.exitCode)
+		}
+		if reason != "" {
+			line += errorStyle.Render(": " + collapse(reason, max(width-24, 10)))
+		}
+	}
+	return line
+}
+
+// humanBytes renders a byte count the way the Write collapsed entry shows it.
+func humanBytes(n int) string {
+	switch {
+	case n >= 1<<20:
+		return trimFloat(float64(n)/(1<<20)) + " MB"
+	case n >= 1<<10:
+		return trimFloat(float64(n)/(1<<10)) + " kB"
+	default:
+		return itoa(int64(n)) + " B"
+	}
+}
+
 // all additions.
 func formatChanges(oldLines, newLines []string, width int) []string {
 	var lines []string

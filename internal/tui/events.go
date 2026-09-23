@@ -193,43 +193,16 @@ func (parser *eventParser) parse(kind string, data json.RawMessage) []tea.Msg {
 			return nil
 		}
 		info := parser.toolCalls[status.CallID]
-		statusMsg := toolStatusMsg{callID: status.CallID, name: info.name, argsRaw: info.argsRaw}
-		if status.Status.Error != "" {
-			statusMsg.status, statusMsg.errText = "failed", status.Status.Error
-			return []tea.Msg{statusMsg}
-		}
-		last := ""
-		for _, operation := range status.Operations {
-			last = operation.Status
-			if result := operation.State.Result; result != nil {
-				output := result.Out
-				if result.Err != "" {
-					if output != "" {
-						output += "\n"
-					}
-					output += result.Err
-				}
-				// Cap the payload; the card only shows a few lines.
-				if len(output) > 4000 {
-					output = output[:4000]
-				}
-				statusMsg.outText = output
-				if result.ExitCode != nil && *result.ExitCode != 0 {
-					statusMsg.exitCode = *result.ExitCode
-				}
-			}
-		}
-		switch last {
-		case "completed":
-			statusMsg.status = "ok"
-		case "failed":
-			statusMsg.status = "failed"
-		case "canceled":
-			statusMsg.status = "canceled"
-		default:
-			statusMsg.status = "running"
-		}
-		return []tea.Msg{statusMsg}
+		cardStatus, errText, outText, exitCode := resolveCallStatus(status.Status.Error, status.Operations)
+		return []tea.Msg{toolStatusMsg{
+			callID:   status.CallID,
+			name:     info.name,
+			argsRaw:  info.argsRaw,
+			status:   cardStatus,
+			errText:  errText,
+			outText:  outText,
+			exitCode: exitCode,
+		}}
 	case kindError:
 		var errEvent wireError
 		if err := json.Unmarshal(data, &errEvent); err == nil {
@@ -237,6 +210,48 @@ func (parser *eventParser) parse(kind string, data json.RawMessage) []tea.Msg {
 		}
 	}
 	return nil
+}
+
+// resolveCallStatus folds a harness tool-call status into the UI-facing card
+// fields: (status, errText, outText, exitCode). It is the single source of
+// truth shared by the live event parser and session replay, so both paths
+// agree on statuses and captured output.
+func resolveCallStatus(statusError string, ops []wireOp) (status, errText, outText string, exitCode int) {
+	if statusError != "" {
+		return "failed", statusError, "", 0
+	}
+	last := ""
+	for _, operation := range ops {
+		last = operation.Status
+		if result := operation.State.Result; result != nil {
+			output := result.Out
+			if result.Err != "" {
+				if output != "" {
+					output += "\n"
+				}
+				output += result.Err
+			}
+			// Cap the payload; the card only shows a few lines.
+			if len(output) > 4000 {
+				output = output[:4000]
+			}
+			outText = output
+			if result.ExitCode != nil && *result.ExitCode != 0 {
+				exitCode = *result.ExitCode
+			}
+		}
+	}
+	switch last {
+	case "completed":
+		status = "ok"
+	case "failed":
+		status = "failed"
+	case "canceled":
+		status = "canceled"
+	default:
+		status = "running"
+	}
+	return status, "", outText, exitCode
 }
 
 func humanCount(value int64) string {

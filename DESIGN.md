@@ -70,7 +70,10 @@ render tool cards when the matching `tool_call_status` arrives.
 Scan session files (mtime desc), title = first external input payload
 (decoded JSON string, collapsed to 60 runes). `↑/↓` select, `Enter` load,
 `Esc` cancel. Loading a session sets `session_id` and replays user inputs +
-assistant messages from the file into the transcript (tool cards skipped).
+assistant messages + tool cards from the file into the transcript (issue #2:
+cards are rebuilt from recorded tool calls and their final
+`tool_call_status`, so a resumed transcript renders exactly like a live one
+through the same collapsed/verbose path).
 
 ## UI redesign (2025-09-23, locked with project owner)
 

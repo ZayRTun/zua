@@ -45,8 +45,9 @@ type block struct {
 	kind     blockKind
 	text     string
 	tool     *toolCard
-	rendered string // glamour cache for assistant blocks
+	rendered string // render cache (assistant markdown, tool cards)
 	width    int    // width the cache was rendered at
+	verbose  bool   // verbosity the cache was rendered at
 }
 
 type Model struct {
@@ -71,6 +72,7 @@ type Model struct {
 
 	running bool
 	aborted bool
+	verbose bool // Verbose Transcript (ctrl+O); false = Collapsed Entries
 	width   int
 	height  int
 
@@ -219,6 +221,12 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.paletteHidden = false
 		}
 		switch msg.Type {
+		case tea.KeyCtrlO:
+			m.verbose = !m.verbose
+			for index := range m.blocks {
+				m.blocks[index].rendered = ""
+			}
+			m.refresh()
 		case tea.KeyCtrlC:
 			if m.running && m.cmdCancel != nil {
 				m.cmdCancel()
@@ -375,7 +383,7 @@ func (m *Model) command(input string) []tea.Cmd {
 			"  /reload           re-discover workspace skills & report active config",
 			"  /skills           list discovered skills (model tool / user-invoked)",
 			"  /quit             exit (alias /exit)",
-			"keys: Enter send · Esc abort/quit · Ctrl+C quit",
+			"keys: Enter send · Esc abort/quit · Ctrl+C quit · ctrl+O verbose transcript",
 		}, "\n")})
 	default:
 		if strings.HasPrefix(fields[0], "/skill:") {

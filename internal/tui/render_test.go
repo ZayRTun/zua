@@ -91,3 +91,83 @@ func TestStderrTailKeepsLastLines(t *testing.T) {
 		t.Fatalf("tail should note hidden lines: %q", tail)
 	}
 }
+
+func TestCollapsedEntryMapping(t *testing.T) {
+	cases := []struct {
+		name string
+		card *toolCard
+		want string
+	}{
+		{
+			name: "bash",
+			card: &toolCard{callID: "c1", name: "Bash", argsRaw: `{"command":"go test ./...\nverbose"}`, status: "ok"},
+			want: "⏺ Bash($ go test ./... verbose) ⎿ ok",
+		},
+		{
+			name: "read with lines",
+			card: &toolCard{callID: "c2", name: "Read", argsRaw: `{"path":"main.go","offset":"10","limit":"40"}`, status: "ok"},
+			want: "⏺ Read: main.go (+40 lines) ⎿ ok",
+		},
+		{
+			name: "read without lines",
+			card: &toolCard{callID: "c3", name: "Read", argsRaw: `{"path":"main.go"}`, status: "ok"},
+			want: "⏺ Read: main.go ⎿ ok",
+		},
+		{
+			name: "write bytes",
+			card: &toolCard{callID: "c4", name: "Write", argsRaw: `{"path":"hello.txt","content":"hi"}`, status: "ok"},
+			want: "⏺ Write: hello.txt +2 B ⎿ ok",
+		},
+		{
+			name: "edit counts",
+			card: &toolCard{callID: "c5", name: "Edit", argsRaw: `{"path":"main.go","old_text":"a\nb\nc","new_text":"a\nX\nc\nd"}`, status: "ok"},
+			want: "⏺ Edit: main.go +2/-1 ⎿ ok",
+		},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			got := stripANSI(collapsedEntry(testCase.card, 200))
+			if got != testCase.want {
+				t.Fatalf("collapsedEntry = %q, want %q", got, testCase.want)
+			}
+		})
+	}
+}
+
+func TestCollapsedEntryFailureMarker(t *testing.T) {
+	card := &toolCard{callID: "c1", name: "Bash", argsRaw: `{"command":"exit 3"}`, status: "failed", errText: "command exited with code 3"}
+	line := stripANSI(collapsedEntry(card, 200))
+	if !strings.Contains(line, "✗") {
+		t.Fatalf("failed card missing ✗ marker: %q", line)
+	}
+	if !strings.Contains(line, "failed") || !strings.Contains(line, "code 3") {
+		t.Fatalf("failed card missing outcome/error: %q", line)
+	}
+	if strings.Contains(line, "\n") {
+		t.Fatalf("collapsed entry must stay on one line: %q", line)
+	}
+}
+
+func TestCollapsedEntryPending(t *testing.T) {
+	card := &toolCard{callID: "c1", name: "Bash", argsRaw: `{"command":"sleep 5"}`, status: "running"}
+	line := stripANSI(collapsedEntry(card, 200))
+	if !strings.Contains(line, "running") {
+		t.Fatalf("running card missing pending outcome: %q", line)
+	}
+}
+
+func TestCountDiff(t *testing.T) {
+	added, removed := countDiff("a\nb\nc", "a\nX\nc\nd")
+	if added != 2 || removed != 1 {
+		t.Fatalf("countDiff = +%d/-%d, want +2/-1", added, removed)
+	}
+	if added, removed := countDiff("same", "same"); added != 0 || removed != 0 {
+		t.Fatalf("identical input = +%d/-%d, want 0/0", added, removed)
+	}
+	// Beyond the DP cap the fallback counts whole blocks.
+	old := strings.Repeat("x\n", 500)
+	added, removed = countDiff(old, "new")
+	if added != 1 || removed != 500 {
+		t.Fatalf("large fallback = +%d/-%d, want +1/-500", added, removed)
+	}
+}

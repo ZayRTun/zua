@@ -71,8 +71,10 @@ func sessionTitle(ctx context.Context, store *localfile.Store, id session.ID) st
 	return ""
 }
 
-// replaySession rebuilds transcript blocks (user + assistant text) from a
-// persisted session so the conversation is visible after resuming.
+// replaySession rebuilds transcript blocks (user prompts, assistant messages,
+// and tool cards) from a persisted session so a resumed transcript looks like
+// a live one. Tool cards carry the recorded call arguments and final status,
+// so they render through the same collapsed/verbose path as live cards.
 func replaySession(workspace string, entry sessionEntry) ([]block, string, error) {
 	store, err := localfile.New(sessionsDirectory(workspace))
 	if err != nil {
@@ -82,6 +84,7 @@ func replaySession(workspace string, entry sessionEntry) ([]block, string, error
 	defer cancel()
 
 	blocks := []block{}
+	cards := map[string]*toolCard{} // callID → card, updated by later statuses
 	id := session.ID(entry.id)
 	after := sessionstore.BeforeFirst
 	for {
@@ -100,11 +103,27 @@ func replaySession(workspace string, entry sessionEntry) ([]block, string, error
 				}
 			case sessionstore.ModelResponse:
 				for _, output := range data.Response.Output {
-					if output.Type == llm.ItemMessage {
+					switch output.Type {
+					case llm.ItemMessage:
 						if message, ok := output.Data.(llm.Message); ok && message.Role == llm.RoleAssistant && strings.TrimSpace(message.Text) != "" {
 							blocks = append(blocks, block{kind: blockAssistant, text: strings.TrimRight(message.Text, "\n")})
 						}
+					case llm.ItemToolCall:
+						// The card appears where the model requested the call
+						// (as "running"), matching the live transcript order;
+						// the matching tool_call_status item fills it in.
+						if call, ok := output.Data.(llm.ToolCall); ok && call.CallID != "" {
+							if _, exists := cards[call.CallID]; !exists {
+								card := &toolCard{callID: call.CallID, name: call.Name, argsRaw: call.Arguments, status: "running"}
+								cards[call.CallID] = card
+								blocks = append(blocks, block{kind: blockTool, tool: card})
+							}
+						}
 					}
+				}
+			case sessionstore.ToolCallStatus:
+				if card, ok := cards[data.CallID]; ok {
+					applyReplayStatus(card, data)
 				}
 			}
 		}
@@ -114,4 +133,20 @@ func replaySession(workspace string, entry sessionEntry) ([]block, string, error
 		after = page.NextAfter
 	}
 	return blocks, entry.id, nil
+}
+
+// applyReplayStatus folds one persisted tool-call status into a replayed card.
+// Later statuses overwrite earlier ones, so the terminal state wins. The
+// operation snapshots are re-encoded into the wire shape and folded by the
+// same resolver the live event parser uses.
+func applyReplayStatus(card *toolCard, status sessionstore.ToolCallStatus) {
+	ops := make([]wireOp, 0, len(status.Operations))
+	for _, op := range status.Operations {
+		wire := wireOp{ID: string(op.ID), Type: string(op.Type), Status: string(op.Status)}
+		if op.State != nil && json.Unmarshal(op.State, &wire.State) != nil {
+			wire.State = wireOpState{}
+		}
+		ops = append(ops, wire)
+	}
+	card.status, card.errText, card.outText, card.exitCode = resolveCallStatus(status.Status.Error, ops)
 }
