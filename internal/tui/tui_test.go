@@ -25,8 +25,8 @@ func TestReplayAndListSessions(t *testing.T) {
 
 	t.Setenv("OPENAI_API_KEY", "test-key")
 	t.Setenv("OPENAI_BASE_URL", server.URL)
-	// Global default provider is opencode-go (client not wired yet — provider
-	// ticket); pin the openai-family flow this test exercises.
+	// Global default provider is opencode-go; the openai-family flow is
+	// what this test exercises.
 	t.Setenv("OPENCODE_PROVIDER", "openai")
 
 	workspace := t.TempDir()

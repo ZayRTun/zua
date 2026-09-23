@@ -28,8 +28,9 @@ func hermeticEnv(t *testing.T, serverURL string) func(string) string {
 		case "OPENAI_BASE_URL":
 			return serverURL
 		case "OPENCODE_PROVIDER":
-			// The global default provider is opencode-go, whose client is
-			// not wired until the provider ticket; tests pin openai.
+			// The global default provider is opencode-go; most tests still
+			// pin the openai family (the chat-completions tests use the
+			// settings file instead).
 			return "openai"
 		}
 		return os.Getenv(key)
@@ -121,6 +122,96 @@ func settingsFileFor(t *testing.T, contents string) func(string) string {
 			return home
 		}
 		return ""
+	}
+}
+
+func TestRunOpenCodeGoEndToEnd(t *testing.T) {
+	server, snapshot := testsrv.NewChatCompletions(t)
+	getenv := settingsFileFor(t, fmt.Sprintf(
+		`{"provider":"opencode-go","api_key":"oc_test","base_url":%q,"model":"glm-5.3-flash","thinking_level":"high"}`, server.URL))
+
+	workspace := t.TempDir()
+	var stdout bytes.Buffer
+	code := Run(t.Context(), []string{"-workspace", workspace, `-p`, `create hello.txt with a greeting`}, getenv, &stdout, os.Stderr)
+	if code != 0 {
+		t.Fatalf("Run exit code %d, stdout:\n%s", code, stdout.String())
+	}
+	if _, err := os.ReadFile(filepath.Join(workspace, "hello.txt")); err != nil {
+		t.Fatalf("agent did not write hello.txt: %v\nstdout:\n%s", err, stdout.String())
+	}
+
+	// Every request carried zua's session id and the settings key.
+	exchanges := snapshot()
+	if len(exchanges) != 2 {
+		t.Fatalf("exchanges = %d, want 2 (tool turn + final)", len(exchanges))
+	}
+	sessionID := ""
+	for _, exchange := range exchanges {
+		if got := exchange.Header.Get("x-opencode-session"); got == "" {
+			t.Fatal("request missing x-opencode-session")
+		} else if sessionID == "" {
+			sessionID = got
+		} else if sessionID != got {
+			t.Fatalf("session header changed between requests: %q vs %q", sessionID, got)
+		}
+		if got := exchange.Header.Get("Authorization"); got != "Bearer oc_test" {
+			t.Fatalf("Authorization = %q", got)
+		}
+		var body struct {
+			ReasoningEffort string `json:"reasoning_effort"`
+		}
+		if err := json.Unmarshal(exchange.Body, &body); err != nil || body.ReasoningEffort != "high" {
+			t.Fatalf("reasoning_effort = %q (err %v)", body.ReasoningEffort, err)
+		}
+	}
+
+	// The meta event carries the resolved model; the reasoning item and the
+	// usage buckets survive into the JSONL.
+	var sawReasoning, sawUsage, sawCached bool
+	scanEvents(stdout.String(), func(line string) {
+		var event struct {
+			Type string          `json:"type"`
+			Kind string          `json:"Kind"`
+			Data json.RawMessage `json:"Data"`
+		}
+		_ = json.Unmarshal([]byte(line), &event)
+		if event.Kind == "model_response" {
+			var payload struct {
+				Response struct {
+					Output []struct {
+						Type string `json:"Type"`
+					} `json:"Output"`
+					Usage struct {
+						InputTokens       int64 `json:"InputTokens"`
+						CachedInputTokens int64 `json:"CachedInputTokens"`
+						OutputTokens      int64 `json:"OutputTokens"`
+					} `json:"Usage"`
+				} `json:"Response"`
+			}
+			if err := json.Unmarshal(event.Data, &payload); err == nil {
+				for _, item := range payload.Response.Output {
+					if item.Type == "reasoning" {
+						sawReasoning = true
+					}
+				}
+				usage := payload.Response.Usage
+				if usage.InputTokens > 0 && usage.OutputTokens > 0 {
+					sawUsage = true
+				}
+				if usage.CachedInputTokens > 0 {
+					sawCached = true
+				}
+			}
+		}
+	})
+	if !sawReasoning {
+		t.Fatal("JSONL lacks a reasoning item")
+	}
+	if !sawUsage {
+		t.Fatal("JSONL lacks nonzero usage buckets")
+	}
+	if !sawCached {
+		t.Fatal("JSONL lacks cached input tokens")
 	}
 }
 

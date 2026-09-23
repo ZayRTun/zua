@@ -35,6 +35,7 @@ import (
 	"github.com/unreallabsai/unreal-agent/harness/tool/viewimage"
 
 	"unreal-agent-tui/internal/filetools"
+	"unreal-agent-tui/internal/opencodego"
 	"unreal-agent-tui/internal/settings"
 	"unreal-agent-tui/internal/skills"
 )
@@ -175,6 +176,11 @@ func run(ctx context.Context, args []string, getenv func(string) string, output 
 	sessionID, restored, err := openSession(ctx, store, request.SessionID)
 	if err != nil {
 		return err
+	}
+	// Gateways that require the caller's session id (opencode-go) get it here,
+	// after the session exists.
+	if setter, ok := client.(sessionSetter); ok {
+		setter.SetSessionID(string(sessionID))
 	}
 	registry, operations, registeredSkills, err := buildTools(ctx, absolute, storeDirectory, sessionID, request.SkillDirs, getenv("HOME"))
 	if err != nil {
@@ -407,12 +413,24 @@ func newClient(cfg settings.Settings, settingsPath string) (llm.Adapter, string,
 			return nil, "", nil, err
 		}
 		return client, model, client.Close, nil
-	default:
-		if provider == settings.DefaultProvider {
-			return nil, "", nil, fmt.Errorf("provider %q is not wired yet (the OpenCode Go adapter ships with the provider ticket); set OPENCODE_PROVIDER or the settings provider to a supported one", provider)
+	case "opencode-go":
+		if cfg.APIKey == "" {
+			return nil, "", nil, missingKey("OPENCODE_API_KEY")
 		}
+		client, err := opencodego.NewClient(opencodego.Config{APIKey: cfg.APIKey, BaseURL: settings.FirstNonEmpty(cfg.BaseURL, opencodego.DefaultBaseURL), MaxAttempts: &maxAttempts})
+		if err != nil {
+			return nil, "", nil, err
+		}
+		return client, model, client.Close, nil
+	default:
 		return nil, "", nil, fmt.Errorf("unknown provider %q (want opencode-go, openai, commandcode, openrouter, fireworks, or ollama)", provider)
 	}
+}
+
+// sessionSetter is satisfied by provider clients whose gateway requires the
+// caller's session id (opencode-go's x-opencode-session header).
+type sessionSetter interface {
+	SetSessionID(sessionID string)
 }
 
 func stdin() io.Reader { return os.Stdin }

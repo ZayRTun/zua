@@ -195,3 +195,25 @@ Go subscription makes per-token cost optimization moot, so the modes die):
   (tested). The settings path is gitignored.
 - The TUI forwards `/model` overrides with the next request; resolved
   values win at the request tier of the runner's own precedence chain.
+
+## OpenCode Go provider (added with the provider ticket, issue #11)
+
+- **Chat-completions adapter, in-repo** (`internal/opencodego`): implements the
+  harness's public one-method `llm.Adapter` by wrapping harness primitives
+  (`RemoteClient` for transport + retry policy) — never forks the harness. The
+  gateway's `/responses` endpoint returns 503 for GLM models, so the adapter
+  speaks `/chat/completions`.
+- **Mandatory session header**: every request carries
+  `x-opencode-session: <zua session id>`; the runner attaches it after the
+  session opens (via a `sessionSetter` interface assertion). A request without
+  it gets HTTP 400 `MissingSessionID` (gateway behavior, mirrored by the fake
+  server).
+- **Item translation**: assistant turns merge harness reasoning + tool-call
+  items into one chat message (`reasoning_content` + `tool_calls`); tool
+  results replay as `role: "tool"` messages; GLM reply `reasoning_content`
+  becomes a reasoning item. Raw reasoning state replays verbatim.
+- **Usage**: `prompt_tokens` → input, `prompt_tokens_details.cached_tokens` →
+  cache-read, `completion_tokens` → output (+ nested `reasoning_tokens`);
+  cache-write is not reported by chat-completions (stays 0).
+- **Thinking levels**: `low`/`high`/`max` pass through as `reasoning_effort`;
+  `medium` clamps to `high`, `xhigh` clamps to `max`, empty defaults `high`.

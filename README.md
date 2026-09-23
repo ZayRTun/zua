@@ -72,7 +72,10 @@ manager so file operations execute durably like shell operations. Sessions
 resume by `session_id`, which the TUI tracks across turns.
 
 Providers: `opencode-go` (default), `openai`, `commandcode`, `openrouter`, `fireworks`, `ollama` — set via
-request field, CLI flag, `OPENCODE_PROVIDER`, or the settings file.
+request field, CLI flag, `OPENCODE_PROVIDER`, or the settings file. The default
+provider runs through OpenCode Go's chat-completions gateway
+(`https://opencode.ai/zen/go/v1`): flat-rate subscription, GLM models, and a
+mandatory `x-opencode-session` header on every request.
 
 ## UI features
 
