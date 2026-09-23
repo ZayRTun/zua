@@ -68,9 +68,17 @@ type Model struct {
 	menuIndex  int            // Command Menu selection
 	menuHidden bool           // Esc-dismissed until the input changes
 	sessionID  string
-	turnUsage  [2]int64 // last turn: in, out tokens
-	sessionIn  int64
-	sessionOut int64
+	// Usage Line inputs (glossary: Usage Line). Session buckets accumulate
+	// over every turn; the turn buckets keep the latest turn's values for
+	// CH and the context percentage.
+	sessionIn         int64
+	sessionOut        int64
+	sessionCached     int64 // cache-read total
+	sessionCacheWrite int64 // cache-write total
+	turnIn            int64 // latest turn: full prompt tokens (inclusive)
+	turnOut           int64
+	turnCached        int64 // latest turn: cache-read
+	turnCacheWrite    int64 // latest turn: cache-write
 
 	running bool
 	aborted bool
@@ -146,8 +154,10 @@ type (
 		err     error
 	}
 	usageMsg struct {
-		in  int64
-		out int64
+		in         int64
+		out        int64
+		cached     int64 // cache-read tokens
+		cacheWrite int64 // cache-write tokens
 	}
 )
 
@@ -177,9 +187,12 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.appendBlock(block{kind: blockMeta, text: "session " + short(msg.sessionID) + " · " + msg.model + " · " + m.workspace})
 	case usageMsg:
-		m.turnUsage = [2]int64{msg.in, msg.out}
+		m.turnIn, m.turnOut = msg.in, msg.out
+		m.turnCached, m.turnCacheWrite = msg.cached, msg.cacheWrite
 		m.sessionIn += msg.in
 		m.sessionOut += msg.out
+		m.sessionCached += msg.cached
+		m.sessionCacheWrite += msg.cacheWrite
 		m.refresh()
 	case blockMsg:
 		m.appendBlock(msg.b)
@@ -662,15 +675,17 @@ func (m Model) bottomHeight() int {
 }
 
 // bottomParts renders everything below the transcript viewport, top to
-// bottom: status line, Command Menu (when open), Composer. This one list
+// bottom: Command Menu (when open), Composer, Usage Line. This one list
 // defines both the layout and its height (bottomHeight), so the Command
-// Menu can anchor above the Composer with no hardcoded total.
+// Menu can anchor above the Composer and the Usage Line can sit below it
+// with no hardcoded total.
 func (m Model) bottomParts() []string {
-	parts := []string{m.statusLine()}
+	var parts []string
 	if m.menuVisible() {
 		parts = append(parts, m.viewMenu())
 	}
 	parts = append(parts, m.renderComposer())
+	parts = append(parts, m.usageLine())
 	return parts
 }
 
@@ -794,26 +809,7 @@ func (m Model) renderHeader() string {
 	return strings.Join(lines, "\n")
 }
 
-// statusLine renders the working/idle state, the current model id, and
-// per-turn/session token usage. The whole line is
-// truncated to the terminal width so narrow terminals never overflow.
-func (m Model) statusLine() string {
-	metadata := dimStyle.Render("  ·  " + orDefault(m.cfg.Model, "(default model)"))
-	var status string
-	if m.loading {
-		status = statusStyle.Render(m.spinner.View()+" loading sessions…") + metadata
-	} else if m.running {
-		status = statusStyle.Render(m.spinner.View()) + " " +
-			dimStyle.Render(orDefault(m.turnVerb, "working…")) + metadata
-	} else {
-		status = dimStyle.Render("idle") + metadata
-	}
-	if m.sessionIn > 0 || m.sessionOut > 0 {
-		status += dimStyle.Render("  ·  last turn: " + humanCount(m.turnUsage[0]) + " in / " + humanCount(m.turnUsage[1]) + " out")
-		status += dimStyle.Render("  ·  session: " + humanCount(m.sessionIn) + " in / " + humanCount(m.sessionOut) + " out")
-	}
-	return m.truncateToWidth(status)
-}
+// ---- spinner verbs ----
 
 // spinnerVerbs are the randomized gerund verbs shown dim next to the spinner
 // while a Turn runs — one is chosen per turn by pickVerb.
@@ -890,6 +886,7 @@ var (
 	assistantStyle = lipgloss.NewStyle()
 	toolStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 	dimStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
+	warnStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("3")) // context warning past 70 percent
 	errorStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
 	okStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("12")) // ok tool glyphs
 	statusStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("12")) // spinner/menu/picker accent; same accent as okStyle on purpose — split deliberately if their needs diverge

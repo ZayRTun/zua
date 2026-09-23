@@ -119,7 +119,7 @@ func TestChromePlainUnderNoColor(t *testing.T) {
 		t.Fatalf("chrome emitted ANSI escapes under a no-color profile:\n%q", view)
 	}
 	plain := stripANSI(view)
-	for _, want := range []string{"⏺ Bash", "idle"} {
+	for _, want := range []string{"⏺ Bash", "•"} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("plain chrome missing %q:\n%s", want, plain)
 		}

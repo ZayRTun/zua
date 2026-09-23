@@ -241,3 +241,45 @@ Go subscription makes per-token cost optimization moot, so the modes die):
   typed in the transcript view, and the header stats re-derive live on the
   next launcher render — that is what "skills count refreshes on /reload"
   means here.
+
+## Usage Line replaces the status line (issue #13, T6)
+
+- **The old status line and its tests are deleted** (the hint line went with
+  issue #12). The bottom chrome is now, top to bottom: Command Menu (when
+  open), Composer, and the single Usage Line — the glossary's "below the
+  Composer" position.
+- **Usage Line format**:
+  `↑in ↓out R… W… CH…% $… pct%/window - model • thinking level`.
+  `↑ ↓ R W` are session-spanning totals (accumulate over every turn's
+  usage); `CH` is the latest turn only — cacheRead ÷ prompt tokens, hidden
+  when no cache was reported (as are R/W). Context percentage colorizes
+  past 70% (warn) / 90% (error); the Ascii profile degrades the colors.
+- **`internal/catalog`** is the tiny in-repo model catalog: context window,
+  max tokens, per-1M rates, thinking levels, transcribed from pi-ai's
+  generated OpenCode Go catalog for `glm-5.3-flash`. `Model.Cost` folds
+  buckets × rates; the harness's InputTokens is inclusive (it already
+  contains cache-read/cache-write), so those are carved out before the
+  plain input rate. Catalog-missing models omit the `$` and context
+  segments — never invented.
+- **Wire format**: the cache-read/cache-write buckets already traveled in
+  the runner JSONL (the observer marshals the full harness response); the
+  ticket's "extension" is that the Usage Line now consumes them, pinned by
+  the e2e assertion that `CacheWriteInputTokens` stays present even at 0.
+- **`(auto)`** is gated on `autoCompactionVerified` (usage.go), currently
+  false: the harness represents compaction turns (session.TurnCompaction)
+  but nothing schedules them automatically, so the segment never renders.
+  Flip the gate only after verifying real auto-compaction.
+- **Spinner + gerund verb** prefix the Usage Line while a Turn runs (and
+  while sessions load); idle shows the plain line with no state label.
+- **Token formatting** (`formatTokens`): raw below 1k, one-decimal k below
+  10k, rounded k below 1M, then one-decimal M. Costs render with three
+  decimals (`formatCost`).
+
+- **Amendment (issue #13 review)**: the event parser now threads the JSONL's
+  cache buckets into `usageMsg` (pinned by `TestEventParserUsageCarriesCacheBuckets`)
+  — without it R/W, CH, and the cost carve-out were test-only and cached
+  tokens were costed at the full input rate. Cost renders whenever the
+  catalog resolves and the session has usage (even $0.000), not only when
+  cost > 0; zero cache buckets stay hidden (pi-style noise avoidance —
+  judgement call on the literal format). `catalog.Cost` takes a named
+  `catalog.Usage` struct so the cache buckets cannot be swapped silently.

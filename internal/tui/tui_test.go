@@ -127,6 +127,27 @@ func TestEventParserToolLifecycle(t *testing.T) {
 	}
 }
 
+// TestEventParserUsageCarriesCacheBuckets pins that the parser threads the
+// runner JSONL's cache-read/cache-write buckets into usageMsg — the wire
+// carries them (pinned in the runner e2e) and the Usage Line's R/W, CH, and
+// cost carve-out depend on them (issue #13).
+func TestEventParserUsageCarriesCacheBuckets(t *testing.T) {
+	parser := newEventParser()
+	messages := parser.parse("model_response", []byte(`{"Response":{"Output":[],"Usage":{
+		"InputTokens":500000,"CachedInputTokens":350000,"CacheWriteInputTokens":50000,"OutputTokens":10000}}}`))
+	if len(messages) != 1 {
+		t.Fatalf("got %d messages, want 1 (usage)", len(messages))
+	}
+	usage, ok := messages[0].(usageMsg)
+	if !ok {
+		t.Fatalf("expected usageMsg, got %#v", messages[0])
+	}
+	if usage.in != 500_000 || usage.out != 10_000 || usage.cached != 350_000 || usage.cacheWrite != 50_000 {
+		t.Fatalf("usage buckets = %d/%d/%d/%d, want 500000/10000/350000/50000",
+			usage.in, usage.out, usage.cached, usage.cacheWrite)
+	}
+}
+
 // TestUpdateRearmsListener is the regression test for the "stuck on working"
 // bug: the event listener must be re-armed on every message path until
 // turnDoneMsg is processed.

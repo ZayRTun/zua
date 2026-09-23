@@ -167,7 +167,7 @@ func TestRunOpenCodeGoEndToEnd(t *testing.T) {
 
 	// The meta event carries the resolved model; the reasoning item and the
 	// usage buckets survive into the JSONL.
-	var sawReasoning, sawUsage, sawCached bool
+	var sawReasoning, sawUsage, sawCached, sawCacheWriteField bool
 	scanEvents(stdout.String(), func(line string) {
 		var event struct {
 			Type string          `json:"type"`
@@ -182,9 +182,10 @@ func TestRunOpenCodeGoEndToEnd(t *testing.T) {
 						Type string `json:"Type"`
 					} `json:"Output"`
 					Usage struct {
-						InputTokens       int64 `json:"InputTokens"`
-						CachedInputTokens int64 `json:"CachedInputTokens"`
-						OutputTokens      int64 `json:"OutputTokens"`
+						InputTokens           int64 `json:"InputTokens"`
+						CachedInputTokens     int64 `json:"CachedInputTokens"`
+						CacheWriteInputTokens int64 `json:"CacheWriteInputTokens"`
+						OutputTokens          int64 `json:"OutputTokens"`
 					} `json:"Usage"`
 				} `json:"Response"`
 			}
@@ -201,6 +202,12 @@ func TestRunOpenCodeGoEndToEnd(t *testing.T) {
 				if usage.CachedInputTokens > 0 {
 					sawCached = true
 				}
+				// The Usage Line's cache buckets travel in the wire format
+				// (issue #13): the cache-write bucket is present even when
+				// zero, so consumers can distinguish it from a dropped field.
+				if strings.Contains(line, "CacheWriteInputTokens") {
+					sawCacheWriteField = true
+				}
 			}
 		}
 	})
@@ -212,6 +219,9 @@ func TestRunOpenCodeGoEndToEnd(t *testing.T) {
 	}
 	if !sawCached {
 		t.Fatal("JSONL lacks cached input tokens")
+	}
+	if !sawCacheWriteField {
+		t.Fatal("JSONL lacks the CacheWriteInputTokens bucket")
 	}
 }
 

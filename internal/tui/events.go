@@ -46,8 +46,10 @@ type wireResponse struct {
 }
 
 type wireUsage struct {
-	InputTokens  int64 `json:"InputTokens"`
-	OutputTokens int64 `json:"OutputTokens"`
+	InputTokens           int64 `json:"InputTokens"`
+	CachedInputTokens     int64 `json:"CachedInputTokens"`
+	CacheWriteInputTokens int64 `json:"CacheWriteInputTokens"`
+	OutputTokens          int64 `json:"OutputTokens"`
 }
 
 type wireOutputItem struct {
@@ -179,7 +181,12 @@ func (parser *eventParser) parse(kind string, data json.RawMessage) []tea.Msg {
 		}
 		usage := response.Response.Usage
 		if usage.InputTokens > 0 || usage.OutputTokens > 0 {
-			messages = append(messages, usageMsg{in: usage.InputTokens, out: usage.OutputTokens})
+			messages = append(messages, usageMsg{
+				in:         usage.InputTokens,
+				out:        usage.OutputTokens,
+				cached:     usage.CachedInputTokens,
+				cacheWrite: usage.CacheWriteInputTokens,
+			})
 		}
 		// Merge all assistant messages of one response into a single markdown
 		// block so glamour renders the document as a whole, not fragments.
@@ -263,17 +270,6 @@ func resolveCallStatus(statusError string, ops []wireOp) callStatus {
 		resolved.status = "running"
 	}
 	return resolved
-}
-
-func humanCount(value int64) string {
-	switch {
-	case value >= 1_000_000:
-		return trimFloat(float64(value)/1_000_000) + "M"
-	case value >= 1_000:
-		return trimFloat(float64(value)/1_000) + "k"
-	default:
-		return itoa(value)
-	}
 }
 
 func itoa(value int64) string {

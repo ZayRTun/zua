@@ -89,7 +89,9 @@ mandatory `x-opencode-session` header on every request.
 
 - Markdown rendering (glamour) with syntax-highlighted code blocks
 - Tool-call cards: Bash commands, Read/Write paths, and colorized `- / +` diffs for Edit
-- Session usage in the status line (tokens in/out for the last turn)
+- A Usage Line below the Composer: session-spanning token totals
+  (`↑in ↓out R… W…`), latest-turn cache hit, cost and context percentage
+  from the in-repo model catalog, and `model • thinking level`
 - Slash commands: `/new`, `/resume` (session picker), `/model [id]`, `/reload`, `/skills`, `/help`, `/quit`
 - Growing multiline editor (Enter sends; Alt/Shift+Enter for newline)
 - Tool calls and statuses appear as they happen; see DESIGN.md for the
@@ -103,8 +105,10 @@ system prompt). Read/Write/Edit add schema tokens but let the model make
 structured edits and produce diff cards directly. No mode flag, no mode
 label — glossary terms Pristine/File-Tools Mode are retired (see DESIGN.md).
 
-The status line shows last-turn and cumulative session token usage so you can
-watch cost on your own workload.
+The Usage Line's cost and context segments come from `internal/catalog`
+(currently `glm-5.3-flash`: $0.15/$0.50/$0.03 per 1M, 1.0M window) so you can
+watch spend and headroom on your own workload. Catalog-missing models omit
+those segments rather than invent values.
 
 ## Install as a command
 
