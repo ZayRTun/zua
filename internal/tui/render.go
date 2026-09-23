@@ -46,6 +46,10 @@ func (m *Model) renderBlock(b *block, width int) string {
 		out = errorStyle.Render(wrap("✗ "+b.text, width))
 	case blockDivider:
 		out = dimStyle.Render("── " + b.text + " " + strings.Repeat("─", max(width-len(b.text)-4, 3)))
+	case blockHeader:
+		// The welcome Header renders live on every pass (its stats line must
+		// reflect /reload), so it bypasses the per-block cache.
+		out = m.renderHeader()
 	case blockTool:
 		// Tool cards are dual-rendered: one-line Collapsed Entry by default,
 		// full card in the Verbose Transcript (ctrl+O).

@@ -31,6 +31,7 @@ const (
 	blockTool
 	blockError
 	blockDivider
+	blockHeader
 )
 
 // toolCard is the state of one tool call shown as a card.
@@ -129,14 +130,17 @@ func New(workspace string, cfg settings.Settings, skillDirs []string) Model {
 		spinner:    spinner.New(spinner.WithSpinner(spinner.MiniDot)),
 		toolBlocks: map[string]int{},
 	}
+	// A fresh session opens with the Header as the transcript's welcome
+	// block: visible at launch, scrolling away with the conversation.
+	// Resumed sessions replace the blocks wholesale, so no header there.
+	m.appendBlock(block{kind: blockHeader})
 	return m
 }
 
 func (m Model) Init() tea.Cmd {
-	// Boot into the launcher: the session load lands as sessionsMsg, which
-	// opens the picker — the Header is the first thing the user sees, like
-	// the reference launcher. Esc dismisses to the transcript.
-	return tea.Batch(listSessions(m.workspace), textarea.Blink, m.spinner.Tick)
+	// Boot into a fresh session: the transcript opens with the Header as
+	// its welcome block; the launcher stays on /resume.
+	return tea.Batch(textarea.Blink, m.spinner.Tick)
 }
 
 // ---- messages ----
@@ -377,6 +381,7 @@ func (m *Model) command(input string) []tea.Cmd {
 	case "/new":
 		m.sessionID = ""
 		m.appendBlock(block{kind: blockDivider, text: "new session — next prompt starts fresh"})
+		m.appendBlock(block{kind: blockHeader})
 	case "/skills":
 		m.skills = discoverSkills(m.workspace, m.skillDirs)
 		if len(m.skills) == 0 {

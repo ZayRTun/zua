@@ -92,14 +92,14 @@ func TestUsageLineHidesCHWithoutCache(t *testing.T) {
 	m := sizeModel(t, New(t.TempDir(), settings.Settings{Model: "glm-5.3-flash"}, nil), 100, 30)
 	current, _ := tea.Model(m).Update(usageMsg{in: 50_000, out: 1_000})
 	m = current.(Model)
-	view := stripANSI(m.View())
+	line := stripANSI(m.usageLine())
 	for _, banned := range []string{"CH", "R350", "W50k"} {
-		if strings.Contains(view, banned) {
-			t.Fatalf("no cache reported but %q rendered:\n%s", banned, view)
+		if strings.Contains(line, banned) {
+			t.Fatalf("no cache reported but %q rendered in the Usage Line:\n%s", banned, line)
 		}
 	}
-	if !strings.Contains(view, "↑50k ↓1.0k") {
-		t.Fatalf("usage totals missing:\n%s", view)
+	if !strings.Contains(line, "↑50k ↓1.0k") {
+		t.Fatalf("usage totals missing:\n%s", line)
 	}
 }
 

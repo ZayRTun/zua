@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -27,45 +26,46 @@ func sizeModel(t *testing.T, m Model, width, height int) Model {
 	return current.(Model)
 }
 
-// TestStartupOpensLauncher pins that zua boots into the launcher: Init
-// issues the session load, and the resulting sessionsMsg opens the picker
-// so the Header is the first thing the user sees (the reference launcher).
-func TestStartupOpensLauncher(t *testing.T) {
+// TestFreshSessionShowsHeaderBlock pins the launch decision (amendment to
+// the headerless-transcript rule): zua boots straight into a fresh session
+// whose transcript starts with the Header as a welcome block — visible at
+// launch, scrolling away with the conversation. No pinned chrome, no extra
+// rule, and no picker at boot (the launcher stays on /resume).
+func TestFreshSessionShowsHeaderBlock(t *testing.T) {
 	workspace := t.TempDir()
 	m := sizeModel(t, New(workspace, settings.Settings{Model: "glm-5.3-flash", ThinkingLevel: "high"}, nil), 160, 30)
-
-	// Init's batch must include a command that produces a sessionsMsg.
-	batch, ok := m.Init()().(tea.BatchMsg)
-	if !ok {
-		t.Fatalf("Init returned %T, want tea.BatchMsg", m.Init()())
-	}
-	var loaded bool
-	for _, cmd := range batch {
-		done := make(chan tea.Msg, 1)
-		go func() { done <- cmd() }()
-		select {
-		case msg := <-done:
-			if _, ok := msg.(sessionsMsg); ok {
-				loaded = true
-			}
-		case <-time.After(2 * time.Second):
-			// Long-lived cmd (cursor blink); nothing to assert on.
-		}
-	}
-	if !loaded {
-		t.Fatal("startup does not load sessions — the launcher never opens")
-	}
-
-	// When the list lands, the launcher opens with the Header visible.
-	current, _ := tea.Model(m).Update(sessionsMsg{entries: []sessionEntry{{title: "old work", updated: "2m ago"}}})
-	m = current.(Model)
-	if !m.picking {
-		t.Fatal("sessionsMsg must open the launcher at startup")
+	if m.picking {
+		t.Fatal("launch must not open the picker")
 	}
 	view := stripANSI(m.View())
-	for _, want := range []string{"zua", workspace, "GLM-5.3-Flash · high", "old work"} {
+	for _, want := range []string{"zua", workspace, "GLM-5.3-Flash · high"} {
 		if !strings.Contains(view, want) {
-			t.Fatalf("startup launcher missing %q:\n%s", want, view)
+			t.Fatalf("fresh session missing header content %q:\n%s", want, view)
+		}
+	}
+	// The Header block is content, not chrome: still only the Composer's
+	// two rules.
+	if rules := countFullWidthRules(t, m.View(), 160); rules != 2 {
+		t.Fatalf("fresh session must show only the composer's two rules, found %d:\n%s", rules, view)
+	}
+}
+
+// TestNewCommandShowsFreshHeader pins that /new starts the fresh session
+// with the welcome Header block too.
+func TestNewCommandShowsFreshHeader(t *testing.T) {
+	// Tall terminal: the closing divider and the fresh Header must both be
+	// in view at once.
+	m := sizeModel(t, New(t.TempDir(), settings.Settings{}, nil), 100, 60)
+	m = typeKeys(t, m, "/new")
+	// First Enter accepts the Command Menu entry ("/new"), the second sends.
+	current, _ := tea.Model(m).Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = current.(Model)
+	current, _ = tea.Model(m).Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = current.(Model)
+	view := stripANSI(m.View())
+	for _, want := range []string{"zua", "new session"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("/new transcript missing %q:\n%s", want, view)
 		}
 	}
 }
@@ -240,14 +240,19 @@ func countFullWidthRules(t *testing.T, view string, width int) int {
 	return rules
 }
 
-// TestTranscriptViewLosesHeaderAndDivider checks the transcript view renders
-// with no header and no chrome divider — only the Composer's own rules
-// remain, and the conversation gets the reclaimed viewport height.
+// TestTranscriptViewLosesHeaderAndDivider checks a resumed transcript
+// renders with no header and no chrome divider — the welcome Header block
+// belongs only to fresh sessions (resumed ones replace the blocks
+// wholesale); only the Composer's own rules remain.
 func TestTranscriptViewLosesHeaderAndDivider(t *testing.T) {
 	m := resize(t, 100, 30)
+	// Simulate a resumed session: blocks replaced wholesale, like
+	// loadSession does.
+	m.blocks = []block{{kind: blockUser, text: "earlier turn"}}
+	m.refresh()
 	view := stripANSI(m.View())
 	if strings.Contains(view, "unreal-agent") || strings.Contains(view, "zua") {
-		t.Fatalf("transcript view must not render a header:\n%s", view)
+		t.Fatalf("resumed transcript view must not render a header:\n%s", view)
 	}
 	if rules := countFullWidthRules(t, m.View(), 100); rules != 2 {
 		t.Fatalf("transcript view must show only the composer's two rules, found %d:\n%s", rules, view)
