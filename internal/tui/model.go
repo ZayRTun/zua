@@ -56,7 +56,6 @@ type Model struct {
 	workspace string
 	provider  string
 	model     string
-	fileTools bool
 	turnVerb  string // spinner verb chosen for the running Turn
 
 	viewport   viewport.Model
@@ -90,7 +89,7 @@ type Model struct {
 	events chan tea.Msg
 }
 
-func New(workspace, provider, model string, fileTools bool, skillDirs []string) Model {
+func New(workspace, provider, model string, skillDirs []string) Model {
 	absolute, err := filepath.Abs(workspace)
 	if err != nil {
 		absolute = workspace
@@ -109,7 +108,6 @@ func New(workspace, provider, model string, fileTools bool, skillDirs []string) 
 		workspace:  absolute,
 		provider:   provider,
 		model:      model,
-		fileTools:  fileTools,
 		skillDirs:  skillDirs,
 		skills:     discoverSkills(absolute, skillDirs),
 		textarea:   ta,
@@ -707,11 +705,7 @@ func discoverSkills(workspace string, extras []string) []skills.Entry {
 // per turn, so discoveries apply automatically; this surfaces them.
 func (m *Model) reloadReport() string {
 	lines := []string{"reload — active configuration for the next turn:"}
-	if m.fileTools {
-		lines = append(lines, "  tools: Bash, ViewImage, Read, Write, Edit (file-tools mode)")
-	} else {
-		lines = append(lines, "  tools: Bash, ViewImage (pristine mode)")
-	}
+	lines = append(lines, "  tools: Bash, ViewImage, Read, Write, Edit")
 	list := m.skills
 	if len(list) == 0 {
 		lines = append(lines, "  skills: none found")
@@ -766,26 +760,17 @@ func (m *Model) insertNewline() {
 	m.resizeEditor()
 }
 
-// toolMode names the active tool mode (glossary: Pristine Mode / File-Tools
-// Mode) for the Status Line and reload report.
-func (m Model) toolMode() string {
-	if m.fileTools {
-		return "file-tools"
-	}
-	return "pristine"
-}
-
 // truncateToWidth clips a chrome line to the terminal width so narrow
 // terminals never overflow.
 func (m Model) truncateToWidth(s string) string {
 	return truncate.String(s, uint(max(m.width, 1)))
 }
 
-// statusLine renders the working/idle state, the active tool mode, the
-// current model id, and per-turn/session token usage. The whole line is
+// statusLine renders the working/idle state, the current model id, and
+// per-turn/session token usage. The whole line is
 // truncated to the terminal width so narrow terminals never overflow.
 func (m Model) statusLine() string {
-	metadata := dimStyle.Render("  ·  " + m.toolMode() + "  ·  " + orDefault(m.model, "(default model)"))
+	metadata := dimStyle.Render("  ·  " + orDefault(m.model, "(default model)"))
 	var status string
 	if m.loading {
 		status = statusStyle.Render(m.spinner.View()+" loading sessions…") + metadata

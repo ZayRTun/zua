@@ -1,5 +1,6 @@
 // Package runner wires the unreal-agent harness into a headless agent binary
-// with the Read/Write/Edit file tools added on top of the built-in tools.
+// with the Read/Write/Edit file tools always enabled on top of the built-in
+// tools.
 package runner
 
 import (
@@ -59,7 +60,6 @@ type Request struct {
 	Provider      string    `json:"provider"`
 	ThinkingLevel string    `json:"thinking_level"`
 	SessionID     *string   `json:"session_id"`
-	FileTools     bool      `json:"file_tools"`
 	SkillDirs     []string  `json:"skill_dirs"`
 }
 
@@ -109,7 +109,6 @@ func run(ctx context.Context, args []string, getenv func(string) string, output 
 	providerFlag := flags.String("provider", "", "llm provider: openai, commandcode, openrouter, fireworks, ollama")
 	modelFlag := flags.String("model", "", "model id")
 	skillsFlag := flags.String("skills", "", "comma-separated extra skill directories (beyond <workspace>/.harness/skills)")
-	fileTools := flags.Bool("file-tools", false, "enable Read/Write/Edit file tools; default is the pristine benchmark configuration")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -158,8 +157,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, output 
 	if err != nil {
 		return err
 	}
-	useFileTools := *fileTools || request.FileTools
-	registry, operations, registeredSkills, err := buildTools(ctx, absolute, storeDirectory, sessionID, useFileTools, request.SkillDirs, getenv("HOME"))
+	registry, operations, registeredSkills, err := buildTools(ctx, absolute, storeDirectory, sessionID, request.SkillDirs, getenv("HOME"))
 	if err != nil {
 		return err
 	}
@@ -225,7 +223,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, output 
 	// instructions on demand via the SkillUse tool.
 	builder := contextbuilder.NewBuilder(registeredSkills...)
 	builder.SetModel(llm.Model{ID: model, ReasoningEffort: reasoningEffort(request.ThinkingLevel)})
-	builder.SetSystemPrompt(systemPrompt(request, useFileTools))
+	builder.SetSystemPrompt(systemPrompt(request))
 	for _, definition := range registry.StaticDefinitions() {
 		builder.AddTool(definition.Tool)
 	}
@@ -282,23 +280,14 @@ func messageList(request Request) []Message {
 	return nil
 }
 
-const upstreamSystemPrompt = `You are an AI agent running inside an isolated sandbox container.
 
-## Guidelines
-- Save output files to the workspace root.
-- For large datasets, inspect a sample first before processing everything.
-`
-
-// systemPrompt mirrors upstream's default in pristine mode and uses the
-// pair-programming prompt only when the extra file tools are available.
-func systemPrompt(request Request, useFileTools bool) string {
+// systemPrompt returns the request's explicit prompt or the pair-programming
+// default that matches the always-on file tools.
+func systemPrompt(request Request) string {
 	if request.SystemPrompt != nil && strings.TrimSpace(*request.SystemPrompt) != "" {
 		return *request.SystemPrompt
 	}
-	if useFileTools {
-		return defaultSystemPrompt
-	}
-	return upstreamSystemPrompt
+	return defaultSystemPrompt
 }
 
 func openSession(ctx context.Context, store *localfile.Store, requested *string) (session.ID, sessionstore.ResumeState, error) {
@@ -445,14 +434,13 @@ func skillModelDisabled(path string) bool {
 	return false
 }
 
-// buildTools mirrors upstream's tool configuration exactly (same shell
-// resolution, skill discovery, and enabled names); when useFileTools is true
-// the Read/Write/Edit tools are added on top.
+// buildTools mirrors upstream's tool configuration (same shell resolution,
+// skill discovery, and enabled names) and always adds the Read/Write/Edit
+// file tools on top.
 func buildTools(
 	ctx context.Context,
 	workspace, storeDirectory string,
 	sessionID session.ID,
-	useFileTools bool,
 	skillDirs []string,
 	home string,
 ) (tool.Registry, operation.Manager, []tool.Skill, error) {
@@ -491,8 +479,5 @@ func buildTools(
 		}
 	}
 	local := operation.NewLocalOperationManager(ctx)
-	if !useFileTools {
-		return inner, local, skillEntries, nil
-	}
 	return filetools.NewRegistry(inner, workspace), filetools.NewManager(ctx, local, workspace), skillEntries, nil
 }

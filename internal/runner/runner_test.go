@@ -38,14 +38,14 @@ func scanEvents(stdout string, visit func(line string)) {
 	}
 }
 
-func TestRunEndToEndWithFileTool(t *testing.T) {
+func TestRunEndToEndFileToolFlow(t *testing.T) {
 	server := testsrv.New(t)
 	defer server.Close()
 	getenv := hermeticEnv(t, server.URL)
 
 	workspace := t.TempDir()
 	var stdout bytes.Buffer
-	code := Run(t.Context(), []string{"-workspace", workspace, "-file-tools", `-p`, `create hello.txt with a greeting`}, getenv, &stdout, os.Stderr)
+	code := Run(t.Context(), []string{"-workspace", workspace, `-p`, `create hello.txt with a greeting`}, getenv, &stdout, os.Stderr)
 	if code != 0 {
 		t.Fatalf("Run exit code %d, stdout:\n%s", code, stdout.String())
 	}
@@ -85,10 +85,10 @@ func TestRunEndToEndWithFileTool(t *testing.T) {
 	}
 
 	// Resume: a second run reusing the session id must continue the same
-	// session (and must pass -file-tools again: restore validates tools).
+	// session (the tool set is constant, so restore validates cleanly).
 	var stdout2 bytes.Buffer
 	request := `{"prompt":"continue","session_id":"` + sessionID + `"}`
-	code = Run(t.Context(), []string{"-workspace", workspace, "-file-tools", request}, getenv, &stdout2, os.Stderr)
+	code = Run(t.Context(), []string{"-workspace", workspace, request}, getenv, &stdout2, os.Stderr)
 	if code != 0 {
 		t.Fatalf("resume exit code %d, stdout:\n%s", code, stdout2.String())
 	}
@@ -97,14 +97,14 @@ func TestRunEndToEndWithFileTool(t *testing.T) {
 	}
 }
 
-func TestRunPristineBashFlow(t *testing.T) {
-	server := testsrv.NewWithScript(t, "Bash", `{"command":"echo pristine-flow"}`)
+func TestRunBashFlow(t *testing.T) {
+	server := testsrv.NewWithScript(t, "Bash", `{"command":"echo bash-flow"}`)
 	defer server.Close()
 	getenv := hermeticEnv(t, server.URL)
 
 	workspace := t.TempDir()
 	var stdout bytes.Buffer
-	code := Run(t.Context(), []string{"-workspace", workspace, `-p`, `run echo pristine-flow`}, getenv, &stdout, os.Stderr)
+	code := Run(t.Context(), []string{"-workspace", workspace, `-p`, `run echo bash-flow`}, getenv, &stdout, os.Stderr)
 	if code != 0 {
 		t.Fatalf("Run exit code %d, stdout:\n%s", code, stdout.String())
 	}
@@ -112,7 +112,7 @@ func TestRunPristineBashFlow(t *testing.T) {
 	if !strings.Contains(out, `"Name":"Bash"`) {
 		t.Fatalf("expected a Bash tool call; stdout:\n%s", out)
 	}
-	if !strings.Contains(out, "pristine-flow") {
+	if !strings.Contains(out, "bash-flow") {
 		t.Fatalf("expected bash output in transcript; stdout:\n%s", out)
 	}
 }

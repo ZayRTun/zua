@@ -18,7 +18,6 @@ func main() {
 	workspace := flag.String("workspace", ".", "workspace directory the agent operates in")
 	model := flag.String("model", "", "model id (default: provider default or UNREAL_TUI_MODEL)")
 	provider := flag.String("provider", "", "llm provider: openai, commandcode, openrouter, fireworks, ollama")
-	fileTools := flag.Bool("file-tools", false, "enable Read/Write/Edit file tools (pristine benchmark configuration by default)")
 	skillDirs := flag.String("skills", "", "comma-separated extra skill directories (beyond <workspace>/.harness/skills)")
 	flag.Parse()
 
@@ -35,7 +34,7 @@ func main() {
 	// translate wheel scroll into arrow keys, which Update routes to the
 	// transcript viewport — and text selection keeps working.
 	program := tea.NewProgram(
-		tui.New(*workspace, *provider, *model, *fileTools, extras),
+		tui.New(*workspace, *provider, *model, extras),
 		tea.WithAltScreen(),
 		tea.WithFilter(tui.CSIFilter),
 	)

@@ -22,25 +22,20 @@ func sizeModel(t *testing.T, m Model, width, height int) Model {
 	return current.(Model)
 }
 
-func TestStatusLineShowsModeAndModel(t *testing.T) {
-	// Pristine mode, provider default model.
+func TestStatusLineShowsModel(t *testing.T) {
+	// Provider default model.
 	m := resize(t, 100, 30)
 	view := stripANSI(m.View())
-	if !strings.Contains(view, "pristine") {
-		t.Fatalf("status line missing pristine mode:\n%s", view)
-	}
 	if !strings.Contains(view, "(default model)") {
 		t.Fatalf("status line missing model id:\n%s", view)
 	}
-
-	// file-tools mode.
-	m = sizeModel(t, New(t.TempDir(), "", "", true, nil), 100, 30)
-	if view = stripANSI(m.View()); !strings.Contains(view, "file-tools") || strings.Contains(view, "pristine") {
-		t.Fatalf("status line mode wrong for file-tools:\n%s", view)
+	// No mode label: the tool configuration has no mode concept (glossary).
+	if strings.Contains(view, "pristine") || strings.Contains(view, "file-tools") {
+		t.Fatalf("status line must not show a mode label:\n%s", view)
 	}
 
 	// /model sets the model id, visible in the status line.
-	m = sizeModel(t, New(t.TempDir(), "", "", false, nil), 100, 30)
+	m = sizeModel(t, New(t.TempDir(), "", "", nil), 100, 30)
 	m = typeKeys(t, m, "/model claude-sonnet-4-5")
 	current, _ := tea.Model(m).Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = current.(Model)
@@ -120,7 +115,7 @@ func TestChromePlainUnderNoColor(t *testing.T) {
 		t.Fatalf("chrome emitted ANSI escapes under a no-color profile:\n%q", view)
 	}
 	plain := stripANSI(view)
-	for _, want := range []string{"unreal-agent", "pristine", "⏺ Bash", "idle"} {
+	for _, want := range []string{"unreal-agent", "⏺ Bash", "idle"} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("plain chrome missing %q:\n%s", want, plain)
 		}

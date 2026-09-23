@@ -62,20 +62,16 @@ request field or `UNREAL_TUI_PROVIDER`; model via `UNREAL_TUI_MODEL` or request.
 - Tool calls and statuses appear as they happen; see DESIGN.md for the
   streaming notes (token-level streaming is deferred to upstream harness support)
 
-## Cost: pristine vs file tools
+## Tool configuration
 
-The harness's published cost savings assume a minimal tool surface. By default
-this project runs the **pristine** configuration (Bash + ViewImage + skills,
-upstream system prompt) — matching the benchmarked setup. Opt into the extra
-Read/Write/Edit tools when you want diff cards and structured edits:
+There is exactly one tool configuration: Bash, ViewImage, and skills plus the
+always-on **Read**, **Write**, and **Edit** file tools (pair-programming
+system prompt). Read/Write/Edit add schema tokens but let the model make
+structured edits and produce diff cards directly. No mode flag, no mode
+label — glossary terms Pristine/File-Tools Mode are retired (see DESIGN.md).
 
-```sh
-zua -workspace ./my-project                # pristine (default)
-zua -workspace ./my-project -file-tools    # + Read/Write/Edit
-```
-
-The status line shows last-turn and cumulative session token usage, so you can
-A/B both modes on your own workload.
+The status line shows last-turn and cumulative session token usage so you can
+watch cost on your own workload.
 
 ## Install as a command
 
@@ -87,8 +83,7 @@ Then run it inside any project directory (workspace = current directory):
 
 ```sh
 cd ~/my-project
-zua                                   # pristine config, workspace = .
-zua -file-tools                       # with Read/Write/Edit + diff cards
+zua                                   # workspace = .
 zua -provider commandcode             # GLM-5.3-Flash via Command Code
 ```
 

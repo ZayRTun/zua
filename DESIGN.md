@@ -100,9 +100,9 @@ does not send**; a second enter sends. CC-identical.
 
 **Chrome palette**: header, Tool Cards, and Status Line use a dim-gray
 + single-accent palette (accent 12); assistant markdown keeps glamour
-auto-style. Status Line always shows the active tool mode (pristine /
-file-tools) and the current model id next to working/idle + usage — the
-cost-critical mode setting stays visible. While a Turn runs the spinner
+auto-style. Status Line shows the current model id next to working/idle +
+usage — the tool configuration has no mode concept (amended 2026-07: modes
+retired). While a Turn runs the spinner
 shows a randomized gerund verb (chosen per turn, rendered dim). All
 chrome degrades to plain text under NO_COLOR / no-color terminals.
 
@@ -118,11 +118,13 @@ and assistant messages never collapse.
 
 **Chrome**: glamour auto-style kept for markdown; header/cards/status line
 restyle to dim gray + accent 12. Respect NO_COLOR. Spinner adopts randomized
-gerund verbs. Status line gains mode (pristine/file-tools) and model.
-Mouse cell-motion kept.
+gerund verbs. Status line shows model id. Mouse cell-motion kept.
 
-**Frozen**: runner JSONL contract, session file format, CLI flags.
-Token streaming remains deferred (upstream constraint).
+**Frozen**: runner JSONL contract, session file format. Token streaming
+remains deferred (upstream constraint). Amended 2026-07 (issue #9): the
+`-file-tools` flag and the `file_tools` request field are removed — Read/
+Write/Edit are always enabled and the CLI-flag freeze is lifted for that
+surface.
 
 ## Out of scope (for now)
 
@@ -165,16 +167,14 @@ the async tool model. Their benchmark tables correlate more tool definitions
 with more tool calls and input tokens (Pi: 27–60 tools → 57–75 calls;
 unreal-agent: ~5 tools → 27–38).
 
-Consequences for this project:
+Consequences for this project (amended 2026-07, issue #9 — the flat OpenCode
+Go subscription makes per-token cost optimization moot, so the modes die):
 
-- **Pristine by default.** The runner now mirrors upstream exactly: Bash +
-  ViewImage (+ SkillUse when skills exist), upstream default system prompt,
-  $SHELL resolution, operation directory under the session store. No file
-  tools, no extra prompt. This is the configuration their cost numbers were
-  measured against.
-- **File tools are opt-in** via `-file-tools` (runner flag or TUI flag, or
-  `"file_tools": true` in the JSON request). They add schema tokens but may
-  save turns on edit-heavy work; treat as an empirical, per-workload choice.
+- ~~**Pristine by default.**~~ Retired. The runner always runs Bash +
+  ViewImage (+ SkillUse when skills exist) **plus the Read/Write/Edit file
+  tools**, pair-programming system prompt, $SHELL resolution, operation
+  directory under the session store.
+- ~~**File tools are opt-in** via `-file-tools`...~~ Retired. There is no
+  mode flag, no `file_tools` request field, no mode label anywhere.
 - **Usage in the status line**: the TUI accumulates per-turn and session
-  input/output tokens from model_response usage, enabling direct A/B cost
-  comparison between pristine and file-tools runs.
+  input/output tokens from model_response usage.
