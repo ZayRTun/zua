@@ -36,9 +36,9 @@ func TestMenuOpensOnLeadingSlash(t *testing.T) {
 			t.Fatalf("menu missing description %q for %s:\n%s", cmd.desc, cmd.name, view)
 		}
 	}
-	// The menu is anchored above the Prompt Box.
+	// The menu is anchored above the Composer.
 	if menuPos, boxPos := strings.Index(view, "↑/↓ select"), strings.Index(view, "╭"); menuPos == -1 || boxPos == -1 || menuPos > boxPos {
-		t.Fatalf("menu must render above the Prompt Box (menu=%d box=%d):\n%s", menuPos, boxPos, view)
+		t.Fatalf("menu must render above the Composer (menu=%d box=%d):\n%s", menuPos, boxPos, view)
 	}
 }
 
@@ -88,7 +88,7 @@ func TestMenuFiltersByPrefixCaseInsensitive(t *testing.T) {
 
 // TestMenuUpDownMovesSelectionNotScroll checks the locked routing precedence:
 // while the menu is open, ↑/↓ change only the selection — the transcript does
-// not scroll and the Prompt Box cursor does not move.
+// not scroll and the Composer cursor does not move.
 func TestMenuUpDownMovesSelectionNotScroll(t *testing.T) {
 	current := tea.Model(resize(t, 100, 30))
 	for i := 0; i < 30; i++ {
@@ -115,7 +115,7 @@ func TestMenuUpDownMovesSelectionNotScroll(t *testing.T) {
 		t.Fatalf("menu ↓ scrolled the transcript: YOffset=%d", m.viewport.YOffset)
 	}
 	if got := m.textarea.View(); got != editorBefore {
-		t.Fatalf("menu ↓ moved the Prompt Box input:\nbefore %q\nafter  %q", editorBefore, got)
+		t.Fatalf("menu ↓ moved the Composer input:\nbefore %q\nafter  %q", editorBefore, got)
 	}
 
 	// ↑ at the top stays on the first entry.
@@ -351,10 +351,10 @@ func TestSkillMenuAcceptFillsToken(t *testing.T) {
 	current, _ := tea.Model(m).Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = current.(Model)
 
-	// Rendered Prompt Box carries the accepted token; textarea.Value() pins
+	// Rendered Composer carries the accepted token; textarea.Value() pins
 	// the exact trailing space + cursor-at-end that makes room for arguments.
 	if !strings.Contains(stripANSI(m.View()), "/skill:journal") {
-		t.Fatalf("Prompt Box missing accepted /skill:journal:\n%s", stripANSI(m.View()))
+		t.Fatalf("Composer missing accepted /skill:journal:\n%s", stripANSI(m.View()))
 	}
 	if got := m.textarea.Value(); got != "/skill:journal " {
 		t.Fatalf("accept produced %q, want \"/skill:journal \"", got)

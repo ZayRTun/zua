@@ -81,10 +81,10 @@ Scope: visual reskin + interaction feel (option b). Full CC clone features
 (`!` bash mode, `@` file mentions, `#` shortcuts) stay out of scope.
 
 **Rendering**: stays alt-screen (deliberate rejection of CC's inline model —
-keep viewport-managed scrolling, mouse support). Prompt box is the redesigned
+keep viewport-managed scrolling, mouse support). Composer is the redesigned
 surface, not the render model.
 
-**Prompt box**: rounded-corner bordered box, dim border brightening on focus,
+**Composer**: rounded-corner bordered box, dim border brightening on focus,
 `> ` prompt inside, contextual dim hint line below
 (`shift+enter newline · ctrl+o verbose · /help commands`; hidden while a turn
 runs). Keys unchanged: Enter sends, shift/alt+enter newline (works both

@@ -99,7 +99,7 @@ func New(workspace, provider, model string, fileTools bool, skillDirs []string) 
 	ta.Placeholder = "Describe a task… (/help for commands, Esc to abort/quit, Ctrl+C to quit)"
 	ta.Prompt = "> "
 	ta.CharLimit = 32_000
-	// 78 = 80-wide terminal minus the two border columns of the Prompt Box.
+	// 78 = 80-wide terminal minus the two border columns of the Composer.
 	ta.SetWidth(78)
 	ta.SetHeight(1)
 	ta.Focus()
@@ -160,7 +160,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.viewport.Width = msg.Width
-		m.textarea.SetWidth(max(msg.Width-2, 1)) // -2: Prompt Box border columns
+		m.textarea.SetWidth(max(msg.Width-2, 1)) // -2: Composer border columns
 		m.setViewportHeight()
 		m.refresh()
 	case spinner.TickMsg:
@@ -525,7 +525,7 @@ var commandTable = []commandEntry{
 }
 
 // menuItem is one Command Menu row: a static command or a dynamic skill.
-// insert is what tab/enter put into the Prompt Box; display is what the
+// insert is what tab/enter put into the Composer; display is what the
 // menu row shows (insert omits the argument placeholder).
 type menuItem struct{ insert, display, desc string }
 
@@ -571,7 +571,7 @@ func (m *Model) menuMatches() []menuItem {
 }
 
 // menuVisible reports whether the Command Menu should render above the
-// Prompt Box: input starts with "/" and is still selecting a command (no
+// Composer: input starts with "/" and is still selecting a command (no
 // whitespace yet), the menu was not Esc-dismissed, and something matches.
 func (m Model) menuVisible() bool {
 	if m.menuHidden || m.picking {
@@ -586,7 +586,7 @@ func (m Model) menuVisible() bool {
 
 // handleMenuKeys consumes keys while the Command Menu is open. Locked
 // precedence (DESIGN.md): ↑/↓ move the selection (never scroll the
-// transcript or move the Prompt Box cursor), tab completes, esc dismisses before
+// transcript or move the Composer cursor), tab completes, esc dismisses before
 // any quit behavior, and enter accepts the highlighted entry into the input
 // WITHOUT sending — a second enter, with the menu closed, sends.
 // Returns (handled, cmd).
@@ -648,7 +648,7 @@ func (m *Model) clampMenuIndex(matches []menuItem) {
 }
 
 // setViewportHeight sizes the transcript viewport to whatever the bottom
-// section (status, Command Menu, Prompt Box, hint line) actually needs. Nothing
+// section (status, Command Menu, Composer, hint line) actually needs. Nothing
 // here may assume a fixed total height: the Command Menu anchors above the
 // box and grows it, so the height is always derived from the parts.
 func (m *Model) setViewportHeight() {
@@ -662,7 +662,7 @@ func (m Model) bottomHeight() int {
 }
 
 // bottomParts renders everything below the transcript viewport, top to
-// bottom: divider, status, Command Menu (when open), Prompt Box, hint line.
+// bottom: divider, status, Command Menu (when open), Composer, hint line.
 // This one list defines both the layout and its height (bottomHeight), so
 // the Command Menu can later anchor above the box with no hardcoded total.
 func (m Model) bottomParts() []string {
@@ -670,14 +670,14 @@ func (m Model) bottomParts() []string {
 	if m.menuVisible() {
 		parts = append(parts, m.viewMenu())
 	}
-	parts = append(parts, m.renderPromptBox())
+	parts = append(parts, m.renderComposer())
 	if m.hintsVisible() {
 		parts = append(parts, m.renderHints())
 	}
 	return parts
 }
 
-// hintsVisible reports whether the contextual hint line under the Prompt Box
+// hintsVisible reports whether the contextual hint line under the Composer
 // should render — it hides while a Turn runs so the status area stays clean.
 func (m Model) hintsVisible() bool {
 	return !m.running
@@ -757,7 +757,7 @@ func (m Model) View() string {
 	)
 }
 
-// insertNewline adds a newline at the cursor and re-flows the Prompt Box.
+// insertNewline adds a newline at the cursor and re-flows the Composer.
 // The textarea's InsertNewline binding only matches bare "enter", so a
 // modified enter (shift/alt, raw or CSI-encoded) arrives unmatched and would
 // be swallowed — insert the newline explicitly.
@@ -822,16 +822,16 @@ func pickVerb() string {
 	return spinnerVerbs[rand.IntN(len(spinnerVerbs))]
 }
 
-// ---- Prompt Box ----
+// ---- Composer ----
 
 const (
 	dimBorder   = lipgloss.Color("8")  // unfocused border
 	focusBorder = lipgloss.Color("12") // focused border (accent)
 )
 
-// promptBorderStyleFor is the rounded Prompt Box border: dim while
+// composerBorderStyleFor is the rounded Composer border: dim while
 // unfocused, brightening to the accent color on focus.
-func promptBorderStyleFor(focused bool) lipgloss.Style {
+func composerBorderStyleFor(focused bool) lipgloss.Style {
 	border := dimBorder
 	if focused {
 		border = focusBorder
@@ -841,21 +841,21 @@ func promptBorderStyleFor(focused bool) lipgloss.Style {
 		BorderForeground(border)
 }
 
-// renderPromptBox draws the rounded Prompt Box around the textarea.
-func (m Model) renderPromptBox() string {
-	return promptBorderStyleFor(m.textarea.Focused()).Render(m.textarea.View())
+// renderComposer draws the rounded Composer around the textarea.
+func (m Model) renderComposer() string {
+	return composerBorderStyleFor(m.textarea.Focused()).Render(m.textarea.View())
 }
 
-// hintText is the contextual hint line under the Prompt Box.
+// hintText is the contextual hint line under the Composer.
 const hintText = "shift+enter newline · ctrl+o verbose · /help commands"
 
-// renderHints renders the dim hint line below the box, clipped to the
+// renderHints renders the dim hint line below the Composer, clipped to the
 // terminal width so narrow sizes never wrap or overflow.
 func (m Model) renderHints() string {
 	return m.truncateToWidth(dimStyle.Render(hintText))
 }
 
-// viewMenu renders the Command Menu above the Prompt Box: filtered
+// viewMenu renders the Command Menu above the Composer: filtered
 // commands, selected row highlighted, (n/total) footer. Height is capped at
 // maxMenuRows rows and every row is clipped to the terminal width.
 func (m *Model) viewMenu() string {
