@@ -57,19 +57,19 @@ type Model struct {
 	model     string
 	fileTools bool
 
-	viewport      viewport.Model
-	textarea      textarea.Model
-	spinner       spinner.Model
-	blocks        []block
-	toolBlocks    map[string]int // callID → blocks index
-	skillDirs     []string       // extra -skills directories
-	skills        []skills.Entry // discovered skills (refreshed by /reload)
-	paletteIndex  int            // command-palette selection
-	paletteHidden bool           // Esc-dismissed until input changes
-	sessionID     string
-	turnUsage     [2]int64 // last turn: in, out tokens
-	sessionIn     int64
-	sessionOut    int64
+	viewport   viewport.Model
+	textarea   textarea.Model
+	spinner    spinner.Model
+	blocks     []block
+	toolBlocks map[string]int // callID → blocks index
+	skillDirs  []string       // extra -skills directories
+	skills     []skills.Entry // discovered skills (refreshed by /reload)
+	menuIndex  int            // Command Menu selection
+	menuHidden bool           // Esc-dismissed until the input changes
+	sessionID  string
+	turnUsage  [2]int64 // last turn: in, out tokens
+	sessionIn  int64
+	sessionOut int64
 
 	running bool
 	aborted bool
@@ -213,15 +213,15 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		if m.picking {
 			return m.updatePicker(msg)
 		}
-		if handled, extra := m.handlePaletteKeys(msg); handled {
+		if handled, extra := m.handleMenuKeys(msg); handled {
 			cmds = append(cmds, extra...)
-			m.setViewportHeight() // palette visibility changed the bottom section
+			m.setViewportHeight() // menu visibility changed the bottom section
 			break                 // fall through to the common exit path (re-arms listener)
 		}
 		if msg.Type != tea.KeyUp && msg.Type != tea.KeyDown && msg.Type != tea.KeyTab {
-			// typing/backspace changed the input → reset palette selection
-			m.paletteIndex = 0
-			m.paletteHidden = false
+			// typing/backspace changed the input → reset menu selection
+			m.menuIndex = 0
+			m.menuHidden = false
 		}
 		switch msg.Type {
 		case tea.KeyCtrlO:
@@ -274,7 +274,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	if m.running && m.events != nil {
 		cmds = append(cmds, m.listen())
 	}
-	if isScrollKey(message) {
+	// Scroll keys reach the transcript, but never while the Command Menu is
+	// open — ↑/↓ belong to the menu selection then (locked precedence).
+	if isScrollKey(message) && !m.menuVisible() {
 		var cmd tea.Cmd
 		m.viewport, cmd = m.viewport.Update(message)
 		cmds = append(cmds, cmd)
@@ -383,16 +385,13 @@ func (m *Model) command(input string) []tea.Cmd {
 		m.refresh()
 		return []tea.Cmd{listSessions(m.workspace), m.spinner.Tick}
 	case "/help":
-		m.appendBlock(block{kind: blockMeta, text: strings.Join([]string{
-			"commands:",
-			"  /new              start a fresh session",
-			"  /resume           pick a previous session",
-			"  /model [id]       show or set the model",
-			"  /reload           re-discover workspace skills & report active config",
-			"  /skills           list discovered skills (model tool / user-invoked)",
-			"  /quit             exit (alias /exit)",
-			"keys: Enter send · Esc abort/quit · Ctrl+C quit · ctrl+O verbose transcript",
-		}, "\n")})
+		var lines []string
+		lines = append(lines, "commands:")
+		for _, cmd := range commandTable { // same table the Command Menu lists
+			lines = append(lines, fmt.Sprintf("  %-18s %s", cmd.display(), cmd.desc))
+		}
+		lines = append(lines, "keys: Enter send · Esc abort/quit · Ctrl+C quit · ctrl+O verbose transcript")
+		m.appendBlock(block{kind: blockMeta, text: strings.Join(lines, "\n")})
 	default:
 		if strings.HasPrefix(fields[0], "/skill:") {
 			return m.invokeSkillCommand(input, fields[0])
@@ -493,20 +492,45 @@ func (m *Model) beginTurn(display, prompt string) []tea.Cmd {
 	return []tea.Cmd{m.spinner.Tick}
 }
 
-// ---- command palette (pi-style) ----
+// ---- command table & Command Menu ----
 
-type paletteItem struct{ name, desc string }
+// commandEntry is one static slash command.
+type commandEntry struct {
+	name string // canonical command; what accepting inserts ("/model")
+	args string // argument placeholder shown in menu & help ("" = none)
+	desc string
+}
 
-// paletteItems lists built-in commands plus one /skill:name entry per skill.
-func (m *Model) paletteItems() []paletteItem {
-	items := []paletteItem{
-		{"/help", "show commands and keys"},
-		{"/new", "start a fresh session"},
-		{"/resume", "pick a previous session"},
-		{"/model [id]", "show or set the model"},
-		{"/skills", "list discovered skills"},
-		{"/reload", "re-scan skills & report active config"},
-		{"/quit", "exit (alias /exit)"},
+// display is the command as shown in the menu and /help.
+func (c commandEntry) display() string {
+	if c.args == "" {
+		return c.name
+	}
+	return c.name + " " + c.args
+}
+
+// commandTable is the one source of truth for the Command Menu and the
+// /help output, so the two can never drift.
+var commandTable = []commandEntry{
+	{"/new", "", "start a fresh session"},
+	{"/resume", "", "pick a previous session"},
+	{"/model", "[id]", "show or set the model"},
+	{"/reload", "", "re-discover workspace skills & report active config"},
+	{"/skills", "", "list discovered skills (model tool / user-invoked)"},
+	{"/quit", "", "exit (alias /exit)"},
+	{"/help", "", "show commands and keys"},
+}
+
+// menuItem is one Command Menu row: a static command or a dynamic skill.
+// insert is what tab/enter put into the Prompt Box; display is what the
+// menu row shows (insert omits the argument placeholder).
+type menuItem struct{ insert, display, desc string }
+
+// menuItems lists the command table plus one /skill:name entry per skill.
+func (m *Model) menuItems() []menuItem {
+	items := make([]menuItem, 0, len(commandTable)+len(m.skills))
+	for _, cmd := range commandTable {
+		items = append(items, menuItem{insert: cmd.name, display: cmd.display(), desc: cmd.desc})
 	}
 	for _, entry := range m.skills {
 		kind := "model tool"
@@ -517,86 +541,103 @@ func (m *Model) paletteItems() []paletteItem {
 		if entry.Description != "" {
 			desc += " — " + entry.Description
 		}
-		items = append(items, paletteItem{name: "/skill:" + entry.Name, desc: desc})
+		name := "/skill:" + entry.Name
+		items = append(items, menuItem{insert: name, display: name, desc: desc})
 	}
 	return items
 }
 
-// paletteMatches returns items matching the current input's command token.
-func (m *Model) paletteMatches() []paletteItem {
-	token := m.textarea.Value()
-	token = strings.TrimPrefix(strings.TrimSpace(token), "/")
-	if cut := strings.IndexAny(token, " \t"); cut >= 0 {
+// menuMatches returns items whose name starts with the typed command token,
+// case-insensitively. The token is the first word of the input ("/RE" →
+// /resume); once the user types arguments the menu closes (menuVisible).
+func (m *Model) menuMatches() []menuItem {
+	input := m.textarea.Value()
+	token := strings.TrimPrefix(input, "/")
+	if cut := strings.IndexAny(token, " \t\n"); cut >= 0 {
 		token = token[:cut]
 	}
-	token = strings.ToLower(token)
-	var matches []paletteItem
-	for _, item := range m.paletteItems() {
-		if strings.Contains(strings.ToLower(strings.TrimPrefix(item.name, "/")), token) {
+	token = "/" + strings.ToLower(token)
+	var matches []menuItem
+	for _, item := range m.menuItems() {
+		if strings.HasPrefix(strings.ToLower(item.display), token) {
 			matches = append(matches, item)
 		}
 	}
 	return matches
 }
 
-// paletteVisible reports whether the command palette should render.
-func (m *Model) paletteVisible() bool {
-	if m.paletteHidden || m.picking || !strings.HasPrefix(strings.TrimSpace(m.textarea.Value()), "/") {
+// menuVisible reports whether the Command Menu should render above the
+// Prompt Box: input starts with "/" and is still selecting a command (no
+// whitespace yet), the menu was not Esc-dismissed, and something matches.
+func (m Model) menuVisible() bool {
+	if m.menuHidden || m.picking {
 		return false
 	}
-	return len(m.paletteMatches()) > 0
+	input := m.textarea.Value()
+	if !strings.HasPrefix(input, "/") || strings.ContainsAny(input, " \t\n") {
+		return false
+	}
+	return len(m.menuMatches()) > 0
 }
 
-// handlePaletteKeys consumes navigation keys while the palette is open.
+// handleMenuKeys consumes keys while the Command Menu is open. Locked
+// precedence (DESIGN.md): ↑/↓ move the selection (never scroll the
+// transcript or move the Prompt Box cursor), tab completes, esc dismisses before
+// any quit behavior, and enter accepts the highlighted entry into the input
+// WITHOUT sending — a second enter, with the menu closed, sends.
 // Returns (handled, cmd).
-func (m *Model) handlePaletteKeys(msg tea.KeyMsg) (bool, []tea.Cmd) {
-	if !m.paletteVisible() {
+func (m *Model) handleMenuKeys(msg tea.KeyMsg) (bool, []tea.Cmd) {
+	if !m.menuVisible() {
 		return false, nil
 	}
-	matches := m.paletteMatches()
-	if m.paletteIndex >= len(matches) {
-		m.paletteIndex = 0
-	}
+	matches := m.menuMatches()
+	m.clampMenuIndex(matches)
 	switch msg.Type {
 	case tea.KeyUp:
-		if m.paletteIndex > 0 {
-			m.paletteIndex--
+		if m.menuIndex > 0 {
+			m.menuIndex--
 		}
 		return true, nil
 	case tea.KeyDown:
-		if m.paletteIndex < len(matches)-1 {
-			m.paletteIndex++
+		if m.menuIndex < len(matches)-1 {
+			m.menuIndex++
 		}
 		return true, nil
 	case tea.KeyTab:
-		item := matches[m.paletteIndex]
-		m.textarea.SetValue(item.name + " ")
-		m.paletteHidden = false
-		m.resizeEditor()
+		m.acceptMenuItem(matches[m.menuIndex])
 		return true, nil
 	case tea.KeyEsc:
-		m.paletteHidden = true
+		m.menuHidden = true
 		return true, nil
 	case tea.KeyEnter:
 		if m.running {
 			return true, nil
 		}
-		item := matches[m.paletteIndex]
-		invocation := item.name
-		if _, rest, found := strings.Cut(m.textarea.Value(), " "); found && strings.TrimSpace(rest) != "" {
-			invocation += " " + strings.TrimSpace(rest)
-		}
-		m.textarea.Reset()
-		m.textarea.SetHeight(1)
-		m.paletteHidden = true
-		m.paletteIndex = 0
-		return true, m.command(invocation)
+		m.acceptMenuItem(matches[m.menuIndex])
+		m.menuHidden = true // a second enter (menu closed) sends
+		return true, nil
 	}
 	return false, nil
 }
 
+// acceptMenuItem completes the input to the highlighted command (the
+// insertable name — never the displayed argument placeholder) and parks the
+// cursor at the end, leaving room to type arguments.
+func (m *Model) acceptMenuItem(item menuItem) {
+	m.textarea.SetValue(item.insert + " ")
+	m.textarea.CursorEnd()
+	m.resizeEditor()
+}
+
+// clampMenuIndex keeps the selection inside the current match list.
+func (m *Model) clampMenuIndex(matches []menuItem) {
+	if m.menuIndex >= len(matches) {
+		m.menuIndex = 0
+	}
+}
+
 // setViewportHeight sizes the transcript viewport to whatever the bottom
-// section (status, palette, Prompt Box, hint line) actually needs. Nothing
+// section (status, Command Menu, Prompt Box, hint line) actually needs. Nothing
 // here may assume a fixed total height: the Command Menu anchors above the
 // box and grows it, so the height is always derived from the parts.
 func (m *Model) setViewportHeight() {
@@ -610,13 +651,13 @@ func (m Model) bottomHeight() int {
 }
 
 // bottomParts renders everything below the transcript viewport, top to
-// bottom: divider, status, palette (when visible), Prompt Box, hint line.
+// bottom: divider, status, Command Menu (when open), Prompt Box, hint line.
 // This one list defines both the layout and its height (bottomHeight), so
 // the Command Menu can later anchor above the box with no hardcoded total.
 func (m Model) bottomParts() []string {
 	parts := []string{strings.Repeat("─", max(m.width, 1)), m.statusLine()}
-	if m.paletteVisible() {
-		parts = append(parts, m.viewPalette())
+	if m.menuVisible() {
+		parts = append(parts, m.viewMenu())
 	}
 	parts = append(parts, m.renderPromptBox())
 	if m.hintsVisible() {
@@ -754,27 +795,32 @@ func (m Model) renderHints() string {
 	return truncate.String(dimStyle.Render(hintText), uint(max(m.width, 1)))
 }
 
-// viewPalette renders the pi-style command palette above the input:
-// filtered commands, selected row highlighted, (n/total) counter.
-func (m *Model) viewPalette() string {
-	matches := m.paletteMatches()
-	if m.paletteIndex >= len(matches) {
-		m.paletteIndex = 0
+// viewMenu renders the Command Menu above the Prompt Box: filtered
+// commands, selected row highlighted, (n/total) footer. Height is capped at
+// maxMenuRows rows and every row is clipped to the terminal width.
+func (m *Model) viewMenu() string {
+	matches := m.menuMatches()
+	selected := m.menuIndex
+	if selected >= len(matches) { // rendering must not write state
+		selected = 0
 	}
-	const maxShown = 8
+	const maxMenuRows = 8
 	var out []string
 	for index, item := range matches {
-		if index >= maxShown {
+		if index >= maxMenuRows {
 			break
 		}
-		line := "  " + item.name + "  " + item.desc
-		if index == m.paletteIndex {
-			out = append(out, statusStyle.Render("▸ "+item.name)+"  "+item.desc)
+		if index == selected {
+			out = append(out, statusStyle.Render("▸ "+item.display)+"  "+item.desc)
 		} else {
-			out = append(out, dimStyle.Render(line))
+			out = append(out, dimStyle.Render("  "+item.display+"  "+item.desc))
 		}
 	}
-	out = append(out, dimStyle.Render(fmt.Sprintf("(%d/%d)  ↑/↓ select · Tab complete · Enter invoke · Esc dismiss", m.paletteIndex+1, len(matches))))
+	footer := fmt.Sprintf("(%d/%d)  ↑/↓ select · Tab complete · Enter accept · Esc dismiss", selected+1, len(matches))
+	out = append(out, dimStyle.Render(footer))
+	for index := range out {
+		out[index] = truncate.String(out[index], uint(max(m.width, 1)))
+	}
 	return strings.Join(out, "\n")
 }
 

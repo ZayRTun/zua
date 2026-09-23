@@ -233,7 +233,7 @@ func TestReloadDiscovery(t *testing.T) {
 	}
 }
 
-func TestPaletteAndUserSkills(t *testing.T) {
+func TestCommandMenuAndUserSkills(t *testing.T) {
 	dir := t.TempDir()
 	// One model-invocable skill in the workspace, one user-only skill in an
 	// extra directory.
@@ -267,10 +267,10 @@ func TestPaletteAndUserSkills(t *testing.T) {
 
 	m := New(dir, "", "", false, []string{extra})
 	m.textarea.SetValue("/")
-	matches := m.paletteMatches()
+	matches := m.menuMatches()
 	var names []string
 	for _, item := range matches {
-		names = append(names, item.name)
+		names = append(names, item.display)
 	}
 	present := map[string]bool{}
 	for _, name := range names {
@@ -280,16 +280,16 @@ func TestPaletteAndUserSkills(t *testing.T) {
 	// that our two skills are present rather than exact equality.
 	for _, required := range []string{"/help", "/new", "/resume", "/model [id]", "/skills", "/reload", "/quit", "/skill:deploy-check", "/skill:journal"} {
 		if !present[required] {
-			t.Fatalf("palette missing %q; got %v", required, names)
+			t.Fatalf("menu missing %q; got %v", required, names)
 		}
 	}
 
 	// Filter to skills only.
 	m.textarea.SetValue("/skill:")
-	matches = m.paletteMatches()
+	matches = m.menuMatches()
 	matchedNames := map[string]bool{}
 	for _, item := range matches {
-		matchedNames[item.name] = true
+		matchedNames[item.display] = true
 	}
 	if !matchedNames["/skill:deploy-check"] || !matchedNames["/skill:journal"] {
 		t.Fatalf("expected both skills in filtered matches, got %v", matchedNames)
