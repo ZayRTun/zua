@@ -1,0 +1,18 @@
+filetools
+runner
+skills
+testsrv
+tui
+111:	skillsFlag := flags.String("skills", "", "comma-separated extra skill directories (beyond <workspace>/.harness/skills)")
+./internal/skills/skills.go:4:package skills
+internal/runner/runner.go:453:	skillDirs []string,
+internal/tui/model.go:60:	skillDirs     []string       // extra -skills directories
+internal/tui/model.go:85:func New(workspace, provider, model string, fileTools bool, skillDirs []string) Model {
+internal/tui/model.go:104:		skillDirs:  skillDirs,
+internal/tui/model.go:105:		skills:     discoverSkillEntries(skillDirsFor(absolute, skillDirs)),
+internal/tui/model.go:344:		m.skills = discoverSkillEntries(skillDirsFor(m.workspace, m.skillDirs))
+internal/tui/model.go:346:			m.appendBlock(block{kind: blockMeta, text: "no skills found in " + strings.Join(skillDirsFor(m.workspace, m.skillDirs), ", ")})
+internal/tui/model.go:366:		m.skills = discoverSkillEntries(skillDirsFor(m.workspace, m.skillDirs))
+internal/tui/model.go:604:		lines = append(lines, "  skills: none found in "+strings.Join(skillDirsFor(m.workspace, m.skillDirs), ", "))
+162:	registry, operations, err := buildTools(ctx, absolute, storeDirectory, sessionID, useFileTools, request.SkillDirs, getenv("HOME"))
+448:func buildTools(

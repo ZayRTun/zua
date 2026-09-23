@@ -1,0 +1,9 @@
+ok  	unreal-agent-tui/internal/tui	0.353s
+ok  	unreal-agent-tui/internal/runner	0.571s
+ok  	unreal-agent-tui/internal/filetools	0.363s
+REBUILT
+total 58976
+drwxr-xr-x@  4 zayar  staff       128 Sep 23 13:32 .
+drwxr-xr-x@ 11 zayar  staff       352 Sep 23 12:15 ..
+-rwxr-xr-x@  1 zayar  staff  18091218 Sep 23 13:32 zua
+-rwxr-xr-x@  1 zayar  staff  12100514 Sep 23 13:32 zua-agent

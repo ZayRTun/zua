@@ -1,0 +1,3 @@
+# unreal-agent-tui/internal/runner
+internal/runner/runner.go:468:24: undefined: skills
+internal/runner/runner.go:468:70: undefined: getenv

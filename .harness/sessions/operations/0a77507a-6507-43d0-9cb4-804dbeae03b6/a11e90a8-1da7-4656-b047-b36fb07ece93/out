@@ -1,0 +1,41 @@
+174:		m.updateToolCard(msg)
+295:func (m *Model) updateToolCard(msg toolStatusMsg) {
+319:	m.blocks[index].rendered = "" // invalidate render cache
+		case tea.KeyEsc:
+			if m.running && m.cmdCancel != nil {
+				m.aborted = true
+				m.cmdCancel()
+			} else {
+				return m, tea.Quit
+			}
+		case tea.KeyEnter:
+			if strings.Contains(msg.String(), "alt+enter") || strings.Contains(msg.String(), "shift+enter") {
+				m.textarea, _ = m.textarea.Update(msg)
+				m.resizeEditor()
+			} else if !m.running {
+				input := strings.TrimSpace(m.textarea.Value())
+				if input != "" {
+					m.textarea.Reset()
+					m.textarea.SetHeight(1)
+					if strings.HasPrefix(input, "/") {
+						cmds = append(cmds, m.command(input)...)
+					} else {
+						m.appendBlock(block{kind: blockUser, text: input})
+						m.running = true
+						m.follow = true
+						m.events = make(chan tea.Msg, 256)
+						m.refresh()
+						m.startTurn(input)
+						cmds = append(cmds, m.spinner.Tick)
+					}
+				}
+			}
+		default:
+			if isOSCGarbage(msg) {
+				// Terminal query responses (OSC 10/11 color reports) that race
+				// with input reading must never reach the editor.
+				return m, nil
+			}
+			m.textarea, _ = m.textarea.Update(msg)
+177:		if m.viewport.AtBottom() {
+422:	stick := m.viewport.AtBottom()

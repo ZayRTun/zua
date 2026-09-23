@@ -1,0 +1,7 @@
+--- build/vet/fmt exit: 0 ---
+?   	unreal-agent-tui/cmd/zua	[no test files]
+?   	unreal-agent-tui/cmd/zua-agent	[no test files]
+ok  	unreal-agent-tui/internal/filetools	(cached)
+ok  	unreal-agent-tui/internal/runner	(cached)
+?   	unreal-agent-tui/internal/testsrv	[no test files]
+ok  	unreal-agent-tui/internal/tui	0.911s

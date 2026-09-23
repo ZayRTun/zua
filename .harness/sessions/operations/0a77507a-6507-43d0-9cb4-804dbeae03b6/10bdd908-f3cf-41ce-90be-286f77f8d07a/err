@@ -1,0 +1,3 @@
+# unreal-agent-tui/internal/tui
+# [unreal-agent-tui/internal/tui]
+vet: internal/tui/render_test.go:8:9: undefined: diffOps

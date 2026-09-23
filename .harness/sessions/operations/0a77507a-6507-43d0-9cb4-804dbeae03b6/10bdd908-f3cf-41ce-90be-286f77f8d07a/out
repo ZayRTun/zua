@@ -1,0 +1,9 @@
+--- build/vet/fmt done ---
+	want (string, string, int)
+?   	unreal-agent-tui/cmd/zua	[no test files]
+?   	unreal-agent-tui/cmd/zua-agent	[no test files]
+ok  	unreal-agent-tui/internal/filetools	(cached)
+ok  	unreal-agent-tui/internal/runner	(cached)
+?   	unreal-agent-tui/internal/testsrv	[no test files]
+FAIL	unreal-agent-tui/internal/tui [build failed]
+FAIL

@@ -1,0 +1,77 @@
+	case "/quit", "/exit":
+		if m.cmdCancel != nil {
+			m.cmdCancel()
+		}
+		return []tea.Cmd{tea.Quit}
+	case "/new":
+		m.sessionID = ""
+		m.appendBlock(block{kind: blockDivider, text: "new session — next prompt starts fresh"})
+	case "/skills":
+		m.skills = discoverSkillEntries(skillDirsFor(m.workspace, m.skillDirs))
+		if len(m.skills) == 0 {
+			m.appendBlock(block{kind: blockMeta, text: "no skills found in " + strings.Join(skillDirsFor(m.workspace, m.skillDirs), ", ")})
+		} else {
+			var names []string
+			for _, entry := range m.skills {
+				tag := "model tool"
+				if entry.userOnly {
+					tag = "user-invoked"
+				}
+				names = append(names, entry.name+" ("+tag+")")
+			}
+			m.appendBlock(block{kind: blockMeta, text: "skills:\n  " + strings.Join(names, "\n  ")})
+		}
+	case "/model":
+		if len(fields) == 1 {
+			m.appendBlock(block{kind: blockMeta, text: "model: " + orDefault(m.model, "(provider default)")})
+		} else {
+			m.model = fields[1]
+			m.appendBlock(block{kind: blockMeta, text: "model set to " + m.model})
+		}
+	case "/reload":
+		m.skills = discoverSkillEntries(skillDirsFor(m.workspace, m.skillDirs))
+		m.appendBlock(block{kind: blockMeta, text: m.reloadReport()})
+	case "/resume":
+		m.loading = true
+		m.refresh()
+		return []tea.Cmd{listSessions(m.workspace), m.spinner.Tick}
+	case "/help":
+		m.appendBlock(block{kind: blockMeta, text: strings.Join([]string{
+			"commands:",
+			"  /new              start a fresh session",
+			"  /resume           pick a previous session",
+			"  /model [id]       show or set the model",
+			"  /reload           re-discover workspace skills & report active config",
+			"  /quit             exit (alias /exit)",
+			"keys: Enter send · Esc abort/quit · Ctrl+C quit",
+	m.viewport.SetContent(m.renderTranscript())
+	if stick {
+		m.viewport.GotoBottom()
+	}
+}
+
+// reloadReport re-scans the workspace's discoverable resources and reports
+// what the next agent turn will load. The runner subprocess is spawned fresh
+// per turn, so discoveries apply automatically; this surfaces them.
+func (m *Model) reloadReport() string {
+	lines := []string{"reload — active configuration for the next turn:"}
+	if m.fileTools {
+		lines = append(lines, "  tools: Bash, ViewImage, Read, Write, Edit (file-tools mode)")
+	} else {
+		lines = append(lines, "  tools: Bash, ViewImage (pristine mode)")
+	}
+	skills := m.skills
+	if len(skills) == 0 {
+		lines = append(lines, "  skills: none found in "+strings.Join(skillDirsFor(m.workspace, m.skillDirs), ", "))
+	} else {
+		var modelTools, userOnly []string
+		for _, entry := range skills {
+			if entry.userOnly {
+				userOnly = append(userOnly, entry.name)
+			} else {
+				modelTools = append(modelTools, entry.name)
+			}
+		}
+		if len(modelTools) > 0 {
+			lines = append(lines, "  skills (model tools): "+strings.Join(modelTools, ", ")+" → SkillUse enabled")
+		}

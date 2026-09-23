@@ -1,0 +1,257 @@
+# unreal-agent-tui
+
+A terminal UI for the [unreal-agent](https://github.com/unreallabsai/unreal-agent)
+harness — a pair-programming agent for your project, in the style of a coding CLI.
+
+Two binaries:
+
+- `unreal-tui-agent` — headless runner: the harness plus added **Read**, **Write**,
+  and **Edit** file tools on top of the built-in Bash/ViewImage tools. Accepts a
+  JSON request, streams session items as JSONL, and persists resumable sessions
+  under `<workspace>/.harness/sessions`.
+- `unreal-tui` — the bubbletea terminal UI. Spawns `unreal-tui-agent` per turn
+  and renders the transcript, tool calls, and responses.
+
+## Build
+
+Requires Go 1.27+.
+
+```sh
+go build -o bin/ ./cmd/...
+```
+
+## Run
+
+```sh
+export OPENAI_API_KEY=...            # or OPENROUTER_API_KEY / FIREWORKS_AI_API_KEY
+zua -workspace ./my-project
+zua -workspace ./my-project -provider openrouter -model google/gemini-2.5-pro
+```
+
+Keys: `Enter` sends, `Esc` aborts the running turn (or quits when idle), `Ctrl+C` quits.
+
+The headless runner also works standalone:
+
+```sh
+zua-agent -workspace ./my-project -p 'Summarize this project.'
+```
+
+## Architecture
+
+```
+cmd/unreal-tui          bubbletea UI (internal/tui)
+cmd/unreal-tui-agent    headless harness runner (internal/runner)
+internal/filetools      Read/Write/Edit tool translators + operation manager wrapper
+```
+
+The runner wires the public unreal-agent packages directly (coordinator, inbox,
+contextbuilder, session store, LLM clients) and wraps the local operation
+manager so file operations execute durably like shell operations. Sessions
+resume by `session_id`, which the TUI tracks across turns.
+
+Providers: `openai` (default), `commandcode`, `openrouter`, `fireworks`, `ollama` — set via
+request field or `UNREAL_TUI_PROVIDER`; model via `UNREAL_TUI_MODEL` or request.
+
+## UI features
+
+- Markdown rendering (glamour) with syntax-highlighted code blocks
+- Tool-call cards: Bash commands, Read/Write paths, and colorized `- / +` diffs for Edit
+- Session usage in the status line (tokens in/out for the last turn)
+- Slash commands: `/new`, `/resume` (session picker), `/model [id]`, `/help`, `/quit`
+- Growing multiline editor (Enter sends; Alt/Shift+Enter for newline)
+- Tool calls and statuses appear as they happen; see DESIGN.md for the
+  streaming notes (token-level streaming is deferred to upstream harness support)
+
+## Cost: pristine vs file tools
+
+The harness's published cost savings assume a minimal tool surface. By default
+this project runs the **pristine** configuration (Bash + ViewImage + skills,
+upstream system prompt) — matching the benchmarked setup. Opt into the extra
+Read/Write/Edit tools when you want diff cards and structured edits:
+
+```sh
+zua -workspace ./my-project                # pristine (default)
+zua -workspace ./my-project -file-tools    # + Read/Write/Edit
+```
+
+The status line shows last-turn and cumulative session token usage, so you can
+A/B both modes on your own workload.
+
+## Install as a command
+
+```sh
+make install        # go install ./cmd/... → zua + zua-agent in ~/go/bin
+```
+
+Then run it inside any project directory (workspace = current directory):
+
+```sh
+cd ~/my-project
+zua                                   # pristine config, workspace = .
+zua -file-tools                       # with Read/Write/Edit + diff cards
+zua -provider commandcode             # GLM-5.3-Flash via Command Code
+```
+
+`zua-agent` is the headless variant (JSON request in, JSONL events out).
+# unreal-agent-tui design
+
+Decisions locked with the project owner; implement in this order.
+
+## Principles
+
+- Wrap the public unreal-agent harness; never fork it. If a feature needs
+  harness internals, defer until upstream supports it.
+- Mirror pi's UX where it is cheap to do so; diverge only where the harness
+  differs.
+
+## Decisions
+
+| Area | Decision |
+| --- | --- |
+| Tool safety | Auto-run all tools (pi default: no per-call approval). Revisit later; if added, gate at the operation-manager wrapper. |
+| Rendering | Assistant text rendered as markdown (glamour) with syntax highlighting; tool calls as collapsible cards; Edit/Write cards show colorized diffs. |
+| Streaming | Tool calls and statuses render as they arrive. **Token streaming deferred**: upstream's `IncludePartialMessages` is accepted but ignored — the adapter only returns complete responses and its SSE parsing is internal. Re-evaluate when the harness emits partials. |
+| Sessions | Slash commands: `/new`, `/resume`, `/model [id]`, `/quit`, `/help`. Session picker lists `<workspace>/.harness/sessions/*.session.jsonl` by mtime with first user input as title. |
+| Provider | Selected at startup via flag/env; `/model` switches model id for subsequent turns. |
+
+## UI layout (alt-screen)
+
+```
+┌ header ────────────────────────────────────────────┐
+│ unreal-agent · workspace · model · session 1a2b3c4 │
+├ transcript (viewport, scrolls, auto-follow) ───────┤
+│ ❯ user prompt (bold)                               │
+│ · reasoning summary (dim italic)                   │
+│ ⚙ Bash (bash)                                      │
+│ ┌ diff card: Edit main.go ─────────────────────┐   │
+│ │ - old line        + new line                 │   │
+│ └──────────────────────────────────────────────┘   │
+│ assistant markdown (glamour)                       │
+├ status ────────────────────────────────────────────┤
+│ working… · last turn: 1.2k in / 0.3k out           │
+├ editor (grows 1–8 lines with content) ─────────────┤
+│ ❯ _                                                │
+└────────────────────────────────────────────────────┘
+```
+
+Keys: `Enter` send · `Esc` abort turn / quit when idle · `Ctrl+C` quit ·
+`/`-commands in the editor.
+
+## Streaming contract (runner → TUI JSONL)
+
+First line: `{"type":"meta","session_id",...,"model","workspace"}` then
+session-store items (`Kind`: input/turn/model_response/tool_call_status/fork)
+and `{"type":"error"}`. The TUI decodes `model_response` output items
+(message/tool_call/reasoning) and keeps a call_id → (name, arguments) map to
+render tool cards when the matching `tool_call_status` arrives.
+
+## Tool cards
+
+- Decode arguments from the recorded `tool_call` item at card time (no I/O).
+- `Edit`: colored `- old_text` / `+ new_text` lines (collapse to ~12 lines).
+- `Write`: "create/replace path" + first lines of content, collapsed.
+- `Read`: path (+offset/limit) only.
+- `Bash`: command string truncated to one line.
+- Non-terminal statuses render as pending; terminal update replaces the card
+  line (matching by call_id in the transcript buffer).
+
+## Session picker
+
+Scan session files (mtime desc), title = first external input payload
+(decoded JSON string, collapsed to 60 runes). `↑/↓` select, `Enter` load,
+`Esc` cancel. Loading a session sets `session_id` and replays user inputs +
+assistant messages from the file into the transcript (tool cards skipped).
+
+## Out of scope (for now)
+
+- Approval prompts (see Decisions), extensions/skills, themes, mouse support,
+  image tools in the UI.
+
+## Cost alignment (added after reviewing unreallabs.ai/blog/unreal-agent)
+
+The published cost savings come from (a) minimal harness footprint — few tool
+schemas, simple prompts, no sub-agents — and (b) more tool work per turn via
+the async tool model. Their benchmark tables correlate more tool definitions
+with more tool calls and input tokens (Pi: 27–60 tools → 57–75 calls;
+unreal-agent: ~5 tools → 27–38).
+
+Consequences for this project:
+
+- **Pristine by default.** The runner now mirrors upstream exactly: Bash +
+  ViewImage (+ SkillUse when skills exist), upstream default system prompt,
+  $SHELL resolution, operation directory under the session store. No file
+  tools, no extra prompt. This is the configuration their cost numbers were
+  measured against.
+- **File tools are opt-in** via `-file-tools` (runner flag or TUI flag, or
+  `"file_tools": true` in the JSON request). They add schema tokens but may
+  save turns on edit-heavy work; treat as an empirical, per-workload choice.
+- **Usage in the status line**: the TUI accumulates per-turn and session
+  input/output tokens from model_response usage, enabling direct A/B cost
+  comparison between pristine and file-tools runs.
+.PHONY: build install test vet fmt
+
+build:
+	go build -o bin/ ./cmd/...
+
+# Install zua (TUI) and zua-agent (headless) into $(go env GOPATH)/bin.
+install:
+	go install ./cmd/...
+
+test:
+	go test ./...
+
+vet:
+	go vet ./...
+
+fmt:
+	gofmt -l -w .
+module unreal-agent-tui
+
+go 1.27.1
+
+require (
+	github.com/charmbracelet/bubbles v1.0.0
+	github.com/charmbracelet/bubbletea v1.3.10
+	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
+	github.com/unreallabsai/unreal-agent v0.1.1
+)
+
+require (
+	github.com/alecthomas/chroma/v2 v2.20.0 // indirect
+	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
+	github.com/atotto/clipboard v0.1.4 // indirect
+	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
+	github.com/aymerick/douceur v0.2.0 // indirect
+	github.com/charmbracelet/colorprofile v0.4.1 // indirect
+	github.com/charmbracelet/glamour v1.0.0 // indirect
+	github.com/charmbracelet/x/ansi v0.11.6 // indirect
+	github.com/charmbracelet/x/cellbuf v0.0.15 // indirect
+	github.com/charmbracelet/x/exp/slice v0.0.0-20250327172914-2fdc97757edf // indirect
+	github.com/charmbracelet/x/term v0.2.2 // indirect
+	github.com/clipperhouse/displaywidth v0.9.0 // indirect
+	github.com/clipperhouse/stringish v0.1.1 // indirect
+	github.com/clipperhouse/uax29/v2 v2.5.0 // indirect
+	github.com/dlclark/regexp2 v1.11.5 // indirect
+	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
+	github.com/google/uuid v1.6.0 // indirect
+	github.com/gorilla/css v1.0.1 // indirect
+	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
+	github.com/mattn/go-isatty v0.0.20 // indirect
+	github.com/mattn/go-localereader v0.0.1 // indirect
+	github.com/mattn/go-runewidth v0.0.19 // indirect
+	github.com/microcosm-cc/bluemonday v1.0.27 // indirect
+	github.com/muesli/ansi v0.0.0-20230316100256-276c6243b2f6 // indirect
+	github.com/muesli/cancelreader v0.2.2 // indirect
+	github.com/muesli/reflow v0.3.0 // indirect
+	github.com/muesli/termenv v0.16.0 // indirect
+	github.com/oapi-codegen/runtime v1.6.0 // indirect
+	github.com/rivo/uniseg v0.4.7 // indirect
+	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
+	github.com/yuin/goldmark v1.7.13 // indirect
+	github.com/yuin/goldmark-emoji v1.0.6 // indirect
+	golang.org/x/image v0.46.0 // indirect
+	golang.org/x/net v0.48.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/term v0.38.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
+)

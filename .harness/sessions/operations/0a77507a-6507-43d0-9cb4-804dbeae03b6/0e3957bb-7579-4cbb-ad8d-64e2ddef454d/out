@@ -1,0 +1,4 @@
+ls: CONTEXT-MAP.md: No such file or directory
+ls: CONTEXT.md: No such file or directory
+ls: docs/adr: No such file or directory
+9:- Mirror pi's UX where it is cheap to do so; diverge only where the harness

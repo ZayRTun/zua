@@ -1,0 +1,302 @@
+==> internal/tui/render.go <==
+package tui
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/glamour"
+	"github.com/charmbracelet/lipgloss"
+)
+
+// ---- transcript rendering ----
+
+func (m *Model) renderTranscript() string {
+	width := max(m.viewport.Width-1, 20)
+	parts := make([]string, 0, len(m.blocks))
+	for index := range m.blocks {
+		if line := m.renderBlock(&m.blocks[index], width); line != "" {
+			parts = append(parts, line)
+		}
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+func (m *Model) renderBlock(b *block, width int) string {
+	switch b.kind {
+	case blockMeta:
+		return dimStyle.Render(wrap("· "+b.text, width))
+	case blockUser:
+		return userStyle.Render(wrap("❯ "+b.text, width))
+	case blockAssistant:
+		return m.renderMarkdown(b, width)
+	case blockReasoning:
+		return dimStyle.Render(wrap("· "+b.text, width))
+	case blockError:
+		return errorStyle.Render(wrap("✗ "+b.text, width))
+	case blockDivider:
+		return dimStyle.Render("── " + b.text + " " + strings.Repeat("─", max(width-len(b.text)-4, 3)))
+	case blockTool:
+		return m.renderToolCard(b.tool, width)
+	}
+	return ""
+}
+
+var markdownCache []*glamour.TermRenderer
+
+func (m *Model) renderMarkdown(b *block, width int) string {
+	if b.rendered != "" && b.width == width {
+		return b.rendered
+	}
+	renderer, err := glamour.NewTermRenderer(
+		glamour.WithWordWrap(max(width-1, 20)),
+		glamour.WithAutoStyle(),
+	)
+	if err != nil {
+		b.rendered, b.width = wrap(b.text, width), width
+		return b.rendered
+	}
+
+==> internal/testsrv/server.go <==
+// Package testsrv provides a minimal fake OpenAI Responses API (SSE) for
+// tests: turn 1 returns a configurable tool call, later turns return a final
+// message.
+package testsrv
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
+	"testing"
+)
+
+// New starts a fake Responses API server that issues a Write tool call on the
+// first turn; the returned URL is the base URL.
+func New(t *testing.T) *httptest.Server {
+	return NewWithScript(t, "Write", `{"path":"hello.txt","content":"hi from the agent"}`)
+}
+
+// NewWithScript starts a fake server whose first turn issues the given tool
+// call; subsequent turns return an assistant message "done".
+func NewWithScript(t *testing.T, tool string, arguments string) *httptest.Server {
+	t.Helper()
+	var turn atomic.Int64
+	firstItem := `{"type":"function_call","id":"fc_1","call_id":"call_1","name":"` + tool + `","status":"completed","arguments":` + quote(arguments) + `}`
+	finalItem := `{"type":"message","id":"msg_1","role":"assistant","status":"completed","content":[{"type":"output_text","text":"done"}]}`
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		turn := turn.Add(1)
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		send := func(event, data string) {
+			w.Write([]byte("event: " + event + "\ndata: " + data + "\n\n"))
+			flusher.Flush()
+		}
+		item := firstItem
+		if turn > 1 {
+			item = finalItem
+		}
+		send("response.output_item.done", `{"type":"response.output_item.done","output_index":0,"item":`+item+`}`)
+		send("response.completed", `{"type":"response.completed","response":{"id":"resp_1","status":"completed","output":[`+item+`]}}`)
+	}))
+}
+
+// quote encodes s as a JSON string literal.
+func quote(s string) string {
+	encoded, _ := marshalString(s)
+	return encoded
+}
+
+func marshalString(s string) (string, error) {
+	data, err := json.Marshal(s)
+	return string(data), err
+}
+
+==> internal/runner/runner_test.go <==
+package runner
+
+import (
+	"bufio"
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"unreal-agent-tui/internal/testsrv"
+)
+
+func TestRunEndToEndWithFileTool(t *testing.T) {
+	server := testsrv.New(t)
+	defer server.Close()
+
+	t.Setenv("OPENAI_API_KEY", "test-key")
+	t.Setenv("OPENAI_BASE_URL", server.URL)
+
+	workspace := t.TempDir()
+	var stdout bytes.Buffer
+	code := Run(t.Context(), []string{"-workspace", workspace, "-file-tools", `-p`, `create hello.txt with a greeting`}, os.Getenv, &stdout, os.Stderr)
+	if code != 0 {
+		t.Fatalf("Run exit code %d, stdout:\n%s", code, stdout.String())
+	}
+
+	content, err := os.ReadFile(filepath.Join(workspace, "hello.txt"))
+	if err != nil {
+		t.Fatalf("agent did not write hello.txt: %v\nstdout:\n%s", err, stdout.String())
+	}
+	if string(content) != "hi from the agent" {
+		t.Fatalf("hello.txt = %q", content)
+	}
+
+	var sawMeta, sawToolStatus, sawAssistant bool
+	var sessionID string
+	scanner := bufio.NewScanner(bytes.NewReader(stdout.Bytes()))
+	scanner.Buffer(make([]byte, 0, 1024*1024), 8*1024*1024)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.Contains(line, `"type":"meta"`) {
+			sawMeta = true
+			var meta struct {
+				SessionID string `json:"session_id"`
+			}
+			if err := json.Unmarshal([]byte(line), &meta); err == nil {
+				sessionID = meta.SessionID
+			}
+		}
+		if strings.Contains(line, `"Kind":"tool_call_status"`) && strings.Contains(line, `"ID"`) {
+			sawToolStatus = true
+		}
+		if strings.Contains(line, `"Kind":"model_response"`) && strings.Contains(line, `"Text":"done"`) {
+			sawAssistant = true
+		}
+	}
+	if !sawMeta || !sawToolStatus || !sawAssistant {
+
+==> internal/filetools/manager_test.go <==
+package filetools
+
+import (
+	"encoding/json"
+	"encoding/json/jsontext"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/unreallabsai/unreal-agent/harness/operation"
+)
+
+func TestValidateRejectsPathEscape(t *testing.T) {
+	translator := &translator{opType: TypeRead, directory: t.TempDir()}
+	for _, path := range []string{"../outside.txt", ".."} {
+		if _, _, err := translator.validate(`{"path":"` + path + `"}`); err == nil {
+			t.Errorf("validate(%q) succeeded, want workspace-escape error", path)
+		}
+	}
+}
+
+func TestManagerReadWriteEdit(t *testing.T) {
+	directory := t.TempDir()
+	ctx := t.Context()
+	manager := NewManager(ctx, stubManager{}, directory)
+
+	tests := []struct {
+		name    string
+		opType  operation.Type
+		state   string
+		want    string
+		failure string
+	}{
+		{
+			name:   "write",
+			opType: TypeWrite,
+			state:  `{"path":"a/b.txt","content":"hello world"}`,
+			want:   "Wrote 11 bytes to a/b.txt.",
+		},
+		{
+			name:   "read",
+			opType: TypeRead,
+			state:  `{"path":"a/b.txt"}`,
+			want:   "1\thello world\n",
+		},
+		{
+			name:   "edit",
+			opType: TypeEdit,
+			state:  `{"path":"a/b.txt","old_text":"world","new_text":"there"}`,
+			want:   "Edited a/b.txt: replaced 1 occurrence(s).",
+		},
+		{
+			name:    "edit missing",
+			opType:  TypeEdit,
+			state:   `{"path":"a/b.txt","old_text":"nope","new_text":"x"}`,
+			failure: `old_text not found in a/b.txt`,
+		},
+	}
+
+
+==> internal/tui/tui_test.go <==
+package tui
+
+import (
+	"os"
+	"strings"
+	"testing"
+
+	"github.com/charmbracelet/bubbletea"
+
+	"unreal-agent-tui/internal/runner"
+	"unreal-agent-tui/internal/testsrv"
+)
+
+// TestReplayAndListSessions runs one real agent session against the fake LLM
+// server, then verifies the TUI can list and replay it.
+func TestReplayAndListSessions(t *testing.T) {
+	server := testsrv.New(t)
+	defer server.Close()
+
+	t.Setenv("OPENAI_API_KEY", "test-key")
+	t.Setenv("OPENAI_BASE_URL", server.URL)
+
+	workspace := t.TempDir()
+	code := runner.Run(t.Context(), []string{"-workspace", workspace, "-file-tools", `-p`, `create hello.txt with a greeting`}, os.Getenv, os.Stderr, os.Stderr)
+	if code != 0 {
+		t.Fatalf("runner exit code %d", code)
+	}
+
+	message := listSessions(workspace)()
+	sessions, ok := message.(sessionsMsg)
+	if !ok {
+		t.Fatalf("listSessions returned %T", message)
+	}
+	if sessions.err != nil {
+		t.Fatalf("listSessions error: %v", sessions.err)
+	}
+	if len(sessions.entries) != 1 {
+		t.Fatalf("got %d sessions, want 1", len(sessions.entries))
+	}
+	entry := sessions.entries[0]
+	if !strings.Contains(entry.title, "create hello.txt") {
+		t.Fatalf("session title %q, want the user prompt", entry.title)
+	}
+
+	blocks, id, err := replaySession(workspace, entry)
+	if err != nil {
+		t.Fatalf("replaySession: %v", err)
+	}
+	if id != entry.id {
+		t.Fatalf("replayed id %q, want %q", id, entry.id)
+	}
+	var sawUser, sawAssistant bool
+	for _, b := range blocks {
+		switch b.kind {
+		case blockUser:
+			sawUser = strings.Contains(b.text, "create hello.txt")
+		case blockAssistant:
+			sawAssistant = strings.Contains(b.text, "done")
+		}
+	}

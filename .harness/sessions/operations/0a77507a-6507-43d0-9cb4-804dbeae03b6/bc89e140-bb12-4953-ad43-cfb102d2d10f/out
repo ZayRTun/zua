@@ -1,0 +1,40 @@
+16:	Name        string
+17:	Description string
+18:	Path        string // SKILL.md path
+19:	UserOnly    bool   // disable-model-invocation: true → not a model tool
+31:func DefaultDirs(workspace, home string) []string {
+77:// skills (no description) are ignored, as in pi. Name collisions keep the
+79:func Discover(dirs []string) []Entry {
+106:	sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
+130:		UserOnly:    isTruthy(fields["disable-model-invocation"]),
+	"path/filepath"
+	"strings"
+
+	"uuid"
+
+	"github.com/unreallabsai/unreal-agent/harness/contextbuilder"
+	"github.com/unreallabsai/unreal-agent/harness/coordinator"
+	"github.com/unreallabsai/unreal-agent/harness/inbox"
+	"github.com/unreallabsai/unreal-agent/harness/llm"
+	"github.com/unreallabsai/unreal-agent/harness/llm/clients/fireworks"
+	"github.com/unreallabsai/unreal-agent/harness/llm/clients/ollama"
+	"github.com/unreallabsai/unreal-agent/harness/llm/clients/openai"
+	"github.com/unreallabsai/unreal-agent/harness/llm/clients/openrouter"
+	"github.com/unreallabsai/unreal-agent/harness/operation"
+	"github.com/unreallabsai/unreal-agent/harness/session"
+	"github.com/unreallabsai/unreal-agent/harness/sessionstore"
+	"github.com/unreallabsai/unreal-agent/harness/sessionstore/localfile"
+	"github.com/unreallabsai/unreal-agent/harness/tool"
+	"github.com/unreallabsai/unreal-agent/harness/tool/bash"
+	"github.com/unreallabsai/unreal-agent/harness/tool/viewimage"
+
+	"unreal-agent-tui/internal/filetools"
+	"unreal-agent-tui/internal/skills"
+)
+
+const (
+	defaultProvider = "openai"
+	defaultModel    = "gpt-6-astra"
+)
+
+const defaultSystemPrompt = `You are an expert pair programmer working directly inside the user's project directory.

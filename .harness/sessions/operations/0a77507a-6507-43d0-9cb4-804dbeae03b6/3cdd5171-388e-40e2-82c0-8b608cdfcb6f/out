@@ -1,0 +1,137 @@
+		b.rendered, b.width = wrap(b.text, width), width
+		return b.rendered
+	}
+	rendered, err := renderer.Render(b.text)
+	if err != nil {
+		b.rendered, b.width = wrap(b.text, width), width
+		return b.rendered
+	}
+	b.rendered, b.width = strings.TrimRight(rendered, "\n"), width
+	return b.rendered
+}
+
+func (m *Model) renderToolCard(card *toolCard, width int) string {
+	if card == nil {
+		return ""
+	}
+	symbol, style := "⚙", toolStyle
+	switch card.status {
+	case "ok":
+		symbol, style = "✓", lipgloss.NewStyle()
+	case "failed", "canceled":
+		symbol, style = "✗", errorStyle
+	}
+
+	var lines []string
+	args := parseArgs(card.argsRaw)
+	switch card.name {
+	case "Bash":
+		lines = append(lines, style.Render(symbol+" Bash")+" "+toolStyle.Render("$ "+collapse(argString(args, "command"), width-12)))
+	case "Read":
+		detail := argString(args, "path")
+		if offset := argString(args, "offset"); offset != "" {
+			detail += fmt.Sprintf(" (from line %s", offset)
+			if limit := argString(args, "limit"); limit != "" {
+				detail += ", " + limit + " lines"
+			}
+			detail += ")"
+		}
+		lines = append(lines, style.Render(symbol+" Read")+" "+toolStyle.Render(detail))
+	case "Write":
+		lines = append(lines, style.Render(symbol+" Write")+" "+toolStyle.Render(argString(args, "path")))
+		if card.status == "ok" || card.status == "running" {
+			lines = append(lines, previewLines(argString(args, "content"), width)...)
+		}
+	case "Edit":
+		lines = append(lines, style.Render(symbol+" Edit")+" "+toolStyle.Render(argString(args, "path")))
+		if card.status == "ok" || card.status == "running" {
+			lines = append(lines, renderDiff(argString(args, "old_text"), argString(args, "new_text"), width)...)
+		}
+	default:
+		lines = append(lines, style.Render(symbol+" "+orDefault(card.name, "tool")))
+	}
+	if card.errText != "" {
+		lines = append(lines, errorStyle.Render(wrap("  "+collapse(card.errText, width-4), width)))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func renderDiff(oldText, newText string, width int) []string {
+	oldLines := strings.Split(strings.TrimRight(oldText, "\n"), "\n")
+	newLines := strings.Split(strings.TrimRight(newText, "\n"), "\n")
+	var lines []string
+	for _, line := range oldLines {
+		lines = append(lines, diffDelStyle.Render(wrap("- "+line, width)))
+	}
+	for _, line := range newLines {
+		lines = append(lines, diffAddStyle.Render(wrap("+ "+line, width)))
+	}
+	const maxDiffLines = 16
+	if len(lines) > maxDiffLines {
+		hidden := len(lines) - maxDiffLines
+		lines = append(lines[:maxDiffLines], toolStyle.Render(fmt.Sprintf("  … %d more changed lines", hidden)))
+	}
+	return lines
+}
+
+func previewLines(content string, width int) []string {
+	if content == "" {
+		return nil
+	}
+	all := strings.Split(strings.TrimRight(content, "\n"), "\n")
+	const maxPreview = 8
+	shown := all
+	if len(all) > maxPreview {
+		shown = all[:maxPreview]
+	}
+	lines := make([]string, 0, len(shown)+1)
+	for _, line := range shown {
+		lines = append(lines, toolStyle.Render(wrap("  │ "+line, width)))
+	}
+	if len(all) > maxPreview {
+		lines = append(lines, toolStyle.Render(fmt.Sprintf("  … %d more lines", len(all)-maxPreview)))
+	}
+	return lines
+}
+
+func parseArgs(raw string) map[string]any {
+	args := map[string]any{}
+	if raw == "" {
+		return args
+	}
+	data := []byte(raw)
+	// The harness marshals Arguments as a JSON string containing JSON
+	// (encoding/json/v2 + jsontext), so unwrap that outer quote first.
+	if bytes.HasPrefix(bytes.TrimSpace(data), []byte(`"`)) {
+		var quoted string
+		if err := json.Unmarshal(data, &quoted); err == nil {
+			data = []byte(quoted)
+		}
+	}
+	_ = json.Unmarshal(data, &args)
+	return args
+}
+
+func argString(args map[string]any, key string) string {
+	value, _ := args[key].(string)
+	return value
+}
+
+func wrap(text string, width int) string {
+	if width <= 0 {
+		return text
+	}
+	return lipgloss.NewStyle().Width(width).Render(text)
+}
+
+// ---- session picker ----
+
+func (m Model) viewPicker() string {
+	var out []string
+	out = append(out, titleStyle.Render("resume session")+
+		dimStyle.Render("  ↑/↓ select · Enter load · Esc cancel"))
+	out = append(out, strings.Repeat("─", max(m.width, 1)))
+	if len(m.sessions) == 0 {
+		out = append(out, dimStyle.Render("no saved sessions"))
+	}
+	for index, entry := range m.sessions {

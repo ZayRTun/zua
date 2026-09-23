@@ -1,0 +1,15 @@
+      15 cmd/zua-agent/main.go
+      32 cmd/zua/main.go
+      53 internal/testsrv/server.go
+     101 internal/tui/agent.go
+     107 internal/filetools/manager_test.go
+     109 internal/runner/runner_test.go
+     117 internal/tui/sessions.go
+     134 internal/tui/tui_test.go
+     196 internal/tui/render.go
+     197 internal/filetools/manager.go
+     242 internal/tui/events.go
+     243 internal/filetools/tools.go
+     420 internal/tui/model.go
+     444 internal/runner/runner.go
+    2410 total

@@ -1,0 +1,58 @@
+reconciled
+func renderDiff(oldText, newText string, width int) []string {
+	oldLines := strings.Split(strings.TrimRight(oldText, "\n"), "\n")
+	newLines := strings.Split(strings.TrimRight(newText, "\n"), "\n")
+	lines := hunkDiff(oldLines, newLines, width)
+	const maxDiffLines = 24
+	if len(lines) > maxDiffLines {
+		hidden := len(lines) - maxDiffLines
+		lines = append(lines[:maxDiffLines], toolStyle.Render(fmt.Sprintf("  … %d more changed lines", hidden)))
+	}
+	if len(lines) == 0 {
+		lines = append(lines, toolStyle.Render("  (no changes)"))
+	}
+	return lines
+}
+
+// hunkDiff computes a line-level diff (LCS-based) and renders it as hunks:
+// changed lines with up to 2 lines of surrounding context, collapsing runs of
+// unchanged lines.
+func hunkDiff(oldLines, newLines []string, width int) []string {
+	const maxInput = 400 // cap DP size; beyond this fall back to whole-block
+	if len(oldLines) > maxInput || len(newLines) > maxInput {
+		return formatChanges(oldLines, newLines, width)
+	}
+
+	// LCS table.
+	rows, cols := len(oldLines), len(newLines)
+	var lines []string
+	for _, line := range oldLines {
+		lines = append(lines, diffDelStyle.Render(wrap("- "+line, width)))
+	}
+	for _, line := range newLines {
+		lines = append(lines, diffAddStyle.Render(wrap("+ "+line, width)))
+	}
+	return lines
+}
+
+func previewLines(content string, width int) []string {
+	if content == "" {
+		return nil
+	}
+	all := strings.Split(strings.TrimRight(content, "\n"), "\n")
+	const maxPreview = 8
+	shown := all
+	if len(all) > maxPreview {
+		shown = all[:maxPreview]
+	}
+	lines := make([]string, 0, len(shown)+1)
+	for _, line := range shown {
+		lines = append(lines, toolStyle.Render(wrap("  │ "+line, width)))
+	}
+	if len(all) > maxPreview {
+		lines = append(lines, toolStyle.Render(fmt.Sprintf("  … %d more lines", len(all)-maxPreview)))
+	}
+	return lines
+}
+
+func parseArgs(raw string) map[string]any {

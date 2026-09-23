@@ -1,0 +1,7 @@
+internal/tui/render.go:123:			lines = append(lines, renderDiff(argString(args, "old_text"), argString(args, "new_text"), width)...)
+internal/tui/render.go:158:func renderDiff(oldText, newText string, width int) []string {
+internal/tui/model.go:67:	follow  bool // auto-scroll the transcript to the bottom
+internal/tui/model.go:105:		follow:     true,
+internal/tui/model.go:231:						m.follow = true
+internal/tui/model.go:410:	m.follow = true
+internal/tui/model.go:419:	// Auto-follow: only snap to the bottom when the user is already reading

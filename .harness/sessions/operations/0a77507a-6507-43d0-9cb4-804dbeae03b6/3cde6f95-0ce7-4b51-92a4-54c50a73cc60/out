@@ -1,0 +1,44 @@
+		m.refresh()
+		return
+	}
+	m.sessionID = sessionID
+	m.toolBlocks = map[string]int{}
+	m.follow = true
+	m.blocks = blocks
+	m.appendBlock(block{kind: blockDivider, text: "resumed session " + short(sessionID) + " — new prompts continue it"})
+	m.refresh()
+}
+
+// ---- view ----
+
+func (m *Model) refresh() {
+	// Auto-follow: only snap to the bottom when the user is already reading
+	// the tail. If they scrolled up, leave their position alone; it re-engages
+	// automatically once they page back to the bottom.
+	stick := m.viewport.AtBottom()
+	m.viewport.SetContent(m.renderTranscript())
+	if stick {
+		m.viewport.GotoBottom()
+	}
+}
+
+// reloadReport re-scans the workspace's discoverable resources and reports
+// what the next agent turn will load. The runner subprocess is spawned fresh
+// per turn, so discoveries apply automatically; this surfaces them.
+func (m *Model) reloadReport() string {
+	lines := []string{"reload — active configuration for the next turn:"}
+	if m.fileTools {
+		lines = append(lines, "  tools: Bash, ViewImage, Read, Write, Edit (file-tools mode)")
+	} else {
+		lines = append(lines, "  tools: Bash, ViewImage (pristine mode)")
+	}
+	skills := discoverSkills(filepath.Join(m.workspace, ".harness", "skills"))
+	if len(skills) == 0 {
+		lines = append(lines, "  skills: none found in .harness/skills")
+	} else {
+		lines = append(lines, "  skills: "+strings.Join(skills, ", ")+" → SkillUse tool enabled")
+	}
+	lines = append(lines, "  model: "+orDefault(m.model, "(provider default)"))
+42:	cmd.Stderr = stderr
+84:		if len(buffer.lines) > maxStderrLines {
+110:const maxStderrLines = 40

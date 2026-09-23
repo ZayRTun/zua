@@ -1,0 +1,11 @@
+?   	unreal-agent-tui/cmd/zua-agent	[no test files]
+ok  	unreal-agent-tui/internal/filetools	0.815s
+ok  	unreal-agent-tui/internal/runner	0.818s
+?   	unreal-agent-tui/internal/skills	[no test files]
+?   	unreal-agent-tui/internal/testsrv	[no test files]
+ok  	unreal-agent-tui/internal/tui	0.708s
+REBUILT
+10:	"unreal-agent-tui/internal/skills"
+346:	case "/skills":
+382:			"  /skills           list discovered skills (model tool / user-invoked)",
+459:		m.appendBlock(block{kind: blockError, text: "unknown skill " + name + " (/skills to list, /reload to re-scan)"})

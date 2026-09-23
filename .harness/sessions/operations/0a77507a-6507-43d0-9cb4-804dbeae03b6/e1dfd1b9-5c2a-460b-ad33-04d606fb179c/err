@@ -1,0 +1,12 @@
+# unreal-agent-tui/internal/tui
+internal/tui/model.go:61:18: undefined: skillEntry
+internal/tui/model.go:344:14: undefined: discoverSkillEntries
+internal/tui/model.go:344:35: undefined: skillDirsFor
+internal/tui/model.go:346:84: undefined: skillDirsFor
+internal/tui/model.go:448:13: undefined: skills
+internal/tui/model.go:459:15: undefined: skills
+internal/tui/model.go:595:58: undefined: skills
+internal/tui/model.go:596:13: undefined: os
+internal/tui/model.go:597:17: undefined: skills
+internal/tui/model.go:598:9: undefined: skills
+internal/tui/model.go:598:9: too many errors

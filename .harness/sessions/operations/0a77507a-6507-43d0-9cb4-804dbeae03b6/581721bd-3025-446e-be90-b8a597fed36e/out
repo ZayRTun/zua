@@ -1,0 +1,25 @@
+func (m *Model) renderBlock(b *block, width int) string {
+	// Per-block cache: between events only one or two blocks change, so most
+	// renders are pure cache hits (keeps long sessions from re-wrapping
+	// everything on every tool status).
+	if b.rendered != "" && b.width == width {
+		return b.rendered
+	}
+	var out string
+	switch b.kind {
+	case blockMeta:
+		out = dimStyle.Render(wrap("· "+b.text, width))
+	case blockUser:
+		out = userStyle.Render(wrap("❯ "+b.text, width))
+	case blockAssistant:
+		out = m.renderMarkdown(b, width)
+	case blockReasoning:
+		out = dimStyle.Render(wrap("· "+b.text, width))
+	case blockError:
+		out = errorStyle.Render(wrap("✗ "+b.text, width))
+	case blockDivider:
+		out = dimStyle.Render("── " + b.text + " " + strings.Repeat("─", max(width-len(b.text)-4, 3)))
+	case blockTool:
+		out = m.renderToolCard(b.tool, width)
+	}
+	b.rendered, b.width = out, width

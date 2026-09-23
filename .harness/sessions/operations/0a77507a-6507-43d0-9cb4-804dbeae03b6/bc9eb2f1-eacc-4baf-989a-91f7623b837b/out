@@ -1,0 +1,13 @@
+.
+./cmd
+./cmd/zua
+./cmd/zua-agent
+./bin
+./internal
+./internal/tui
+./internal/runner
+./internal/filetools
+./internal/testsrv
+./.harness
+./.harness/sessions
+./.harness/sessions/operations

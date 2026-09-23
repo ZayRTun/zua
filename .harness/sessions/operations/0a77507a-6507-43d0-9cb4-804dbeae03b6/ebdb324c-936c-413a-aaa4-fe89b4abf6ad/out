@@ -1,0 +1,101 @@
+	table := make([][]int, rows+1)
+	for i := range table {
+		table[i] = make([]int, cols+1)
+	}
+	for i := rows - 1; i >= 0; i-- {
+		for j := cols - 1; j >= 0; j-- {
+			if oldLines[i] == newLines[j] {
+				table[i][j] = table[i+1][j+1] + 1
+			} else {
+				table[i][j] = max(table[i+1][j], table[i][j+1])
+			}
+		}
+	}
+
+	// Walk to ops: unchanged, deleted (-), added (+).
+	const (
+		opSame = iota
+		opDel
+		opAdd
+	)
+	type op struct {
+		kind int
+		text string
+	}
+	var ops []op
+	i, j := 0, 0
+	for i < rows && j < cols {
+		switch {
+		case oldLines[i] == newLines[j]:
+			ops = append(ops, op{opSame, oldLines[i]})
+			i, j = i+1, j+1
+		case table[i+1][j] >= table[i][j+1]:
+			ops = append(ops, op{opDel, oldLines[i]})
+			i++
+		default:
+			ops = append(ops, op{opAdd, newLines[j]})
+			j++
+		}
+	}
+	for ; i < rows; i++ {
+		ops = append(ops, op{opDel, oldLines[i]})
+	}
+	for ; j < cols; j++ {
+		ops = append(ops, op{opAdd, newLines[j]})
+	}
+
+	// Emit hunks: up to 2 context lines around each change, gaps collapsed.
+	const context = 2
+	var changes []int
+	for index, entry := range ops {
+		if entry.kind != opSame {
+			changes = append(changes, index)
+		}
+	}
+	if len(changes) == 0 {
+		return nil
+	}
+	clamp := func(value, low, high int) int { return min(max(value, low), high) }
+	var ranges [][2]int
+	start := clamp(changes[0]-context, 0, len(ops))
+	end := clamp(changes[0]+context+1, 0, len(ops))
+	for _, change := range changes[1:] {
+		if change-context <= end {
+			end = clamp(change+context+1, 0, len(ops))
+		} else {
+			ranges = append(ranges, [2]int{start, end})
+			start = clamp(change-context, 0, len(ops))
+			end = clamp(change+context+1, 0, len(ops))
+		}
+	}
+	ranges = append(ranges, [2]int{start, end})
+
+	var lines []string
+	for rangeIndex, rng := range ranges {
+		if rangeIndex > 0 {
+			lines = append(lines, toolStyle.Render("  ⋯"))
+		}
+		for index := rng[0]; index < rng[1]; index++ {
+			switch ops[index].kind {
+			case opDel:
+				lines = append(lines, diffDelStyle.Render(wrap("- "+ops[index].text, width)))
+			case opAdd:
+				lines = append(lines, diffAddStyle.Render(wrap("+ "+ops[index].text, width)))
+			default:
+				lines = append(lines, dimStyle.Render(wrap("  "+ops[index].text, width)))
+			}
+		}
+	}
+	return lines
+}
+
+// formatChanges is the fallback for very large edits: show all removals then
+// all additions.
+func formatChanges(oldLines, newLines []string, width int) []string {
+	var lines []string
+	for _, line := range oldLines {
+		lines = append(lines, diffDelStyle.Render(wrap("- "+line, width)))
+	}
+	for _, line := range newLines {
+		lines = append(lines, diffAddStyle.Render(wrap("+ "+line, width)))
+	}

@@ -1,0 +1,10 @@
+335:	case "/quit", "/exit":
+340:	case "/new":
+343:	case "/skills":
+358:	case "/model":
+365:	case "/reload":
+368:	case "/resume":
+372:	case "/help":
+243:						m.beginTurn(input, input)
+465:	m.beginTurn(input, prompt)
+469:// beginTurn records the user block and starts one agent turn.

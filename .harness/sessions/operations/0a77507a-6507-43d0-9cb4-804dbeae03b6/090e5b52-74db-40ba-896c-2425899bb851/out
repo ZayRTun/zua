@@ -1,0 +1,13 @@
+/Users/zayar/go_code/unreal-agent-tui
+total 64
+drwxr-xr-x@ 11 zayar  staff    352 Sep 23 12:15 .
+drwxr-xr-x@  3 zayar  staff     96 Sep 23 09:38 ..
+drwx------@  3 zayar  staff     96 Sep 23 12:15 .harness
+drwxr-xr-x@  4 zayar  staff    128 Sep 23 12:07 bin
+drwxr-xr-x@  4 zayar  staff    128 Sep 23 12:06 cmd
+-rw-r--r--@  1 zayar  staff   5270 Sep 23 12:00 DESIGN.md
+-rw-r--r--@  1 zayar  staff   2191 Sep 23 11:26 go.mod
+-rw-r--r--@  1 zayar  staff  10256 Sep 23 11:26 go.sum
+drwxr-xr-x@  6 zayar  staff    192 Sep 23 11:35 internal
+-rw-r--r--@  1 zayar  staff    238 Sep 23 12:06 Makefile
+-rw-r--r--@  1 zayar  staff   3456 Sep 23 12:07 README.md

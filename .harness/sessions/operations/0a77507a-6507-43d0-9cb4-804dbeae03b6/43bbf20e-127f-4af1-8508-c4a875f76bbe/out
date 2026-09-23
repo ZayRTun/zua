@@ -1,0 +1,221 @@
+BUILD_OK
+zua
+zua-agent
+package tui
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+
+	tea "github.com/charmbracelet/bubbletea"
+)
+
+// startTurn spawns one zua-agent process for the prompt and streams
+// its JSONL events into m.events.
+func (m *Model) startTurn(prompt string) {
+	ctx, cancel := context.WithCancel(context.Background())
+	m.cmdCancel = cancel
+	agentBinary := agentPath()
+	request := map[string]any{"prompt": prompt}
+	if m.sessionID != "" {
+		request["session_id"] = m.sessionID
+	}
+	if m.provider != "" {
+		request["provider"] = m.provider
+	}
+	if m.model != "" {
+		request["model"] = m.model
+	}
+	encoded, _ := json.Marshal(request)
+
+	cmd := exec.CommandContext(ctx, agentBinary, "-workspace", m.workspace, string(encoded))
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		m.events <- blockMsg{b: block{kind: blockError, text: err.Error()}}
+		m.events <- turnDoneMsg{}
+		return
+	}
+	cmd.Stderr = io.Discard
+	if err := cmd.Start(); err != nil {
+		m.events <- blockMsg{b: block{kind: blockError, text: err.Error()}}
+		m.events <- turnDoneMsg{}
+		return
+	}
+
+	parser := newEventParser()
+	events := m.events
+	go func() {
+		decodeItems(stdout, func(kind string, data json.RawMessage) {
+			for _, message := range parser.parse(kind, data) {
+				events <- message
+			}
+		})
+		events <- turnDoneMsg{err: cmd.Wait()}
+		close(events)
+	}()
+}
+
+// listen returns the next message from the event stream.
+func (m *Model) listen() tea.Cmd {
+	events := m.events
+	return func() tea.Msg {
+		message, ok := <-events
+		if !ok {
+			return turnDoneMsg{}
+		}
+		return message
+	}
+}
+
+func agentPath() string {
+	executable, err := os.Executable()
+	if err == nil {
+		sibling := filepath.Join(filepath.Dir(executable), "zua-agent")
+		if _, err := os.Stat(sibling); err == nil {
+			return sibling
+		}
+	}
+	if path, err := exec.LookPath("zua-agent"); err == nil {
+		return path
+	}
+	return "zua-agent"
+}
+
+// collapse reduces text to one line of at most width runes.
+func collapse(text string, width int) string {
+	text = strings.Join(strings.Fields(text), " ")
+	runes := []rune(text)
+	if width <= 0 || len(runes) <= width {
+		return text
+	}
+	return string(runes[:width]) + "…"
+}
+
+func short(id string) string {
+	if len(id) > 8 {
+		return id[:8]
+	}
+	return id
+}
+package tui
+
+import (
+	"context"
+	"encoding/json"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/unreallabsai/unreal-agent/harness/inbox"
+	"github.com/unreallabsai/unreal-agent/harness/llm"
+	"github.com/unreallabsai/unreal-agent/harness/session"
+	"github.com/unreallabsai/unreal-agent/harness/sessionstore"
+	"github.com/unreallabsai/unreal-agent/harness/sessionstore/localfile"
+)
+
+type sessionEntry struct {
+	id      string
+	title   string
+	updated string
+}
+
+func sessionsDirectory(workspace string) string {
+	return filepath.Join(workspace, ".harness", "sessions")
+}
+
+func listSessions(workspace string) tea.Cmd {
+	return func() tea.Msg {
+		store, err := localfile.New(sessionsDirectory(workspace))
+		if err != nil {
+			return sessionsMsg{err: err}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		infos, err := store.ListSessions(ctx)
+		if err != nil {
+			return sessionsMsg{err: err}
+		}
+		sort.Slice(infos, func(i, j int) bool {
+			return infos[i].LastUpdatedAt.After(infos[j].LastUpdatedAt)
+		})
+		entries := make([]sessionEntry, 0, len(infos))
+		for _, info := range infos {
+			title := sessionTitle(ctx, store, info.ID)
+			entries = append(entries, sessionEntry{
+				id:      string(info.ID),
+				title:   orDefault(collapse(title, 60), "(empty session)"),
+				updated: info.LastUpdatedAt.Format("Jan 2 15:04"),
+			})
+		}
+		return sessionsMsg{entries: entries}
+	}
+}
+
+// sessionTitle returns the first user prompt in a session, or "".
+func sessionTitle(ctx context.Context, store *localfile.Store, id session.ID) string {
+	page, err := store.Items(ctx, id, sessionstore.BeforeFirst, 20)
+	if err != nil {
+		return ""
+	}
+	for _, item := range page.Items {
+		if input, ok := item.Data.(inbox.Input); ok && input.Kind == inbox.InputExternal {
+			var text string
+			if err := json.Unmarshal(input.Payload, &text); err == nil {
+				return text
+			}
+		}
+	}
+	return ""
+}
+
+// replaySession rebuilds transcript blocks (user + assistant text) from a
+// persisted session so the conversation is visible after resuming.
+func replaySession(workspace string, entry sessionEntry) ([]block, string, error) {
+	store, err := localfile.New(sessionsDirectory(workspace))
+	if err != nil {
+		return nil, "", err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	blocks := []block{}
+	id := session.ID(entry.id)
+	after := sessionstore.BeforeFirst
+	for {
+		page, err := store.Items(ctx, id, after, 200)
+		if err != nil {
+			return nil, "", err
+		}
+		for _, item := range page.Items {
+			switch data := item.Data.(type) {
+			case inbox.Input:
+				if data.Kind == inbox.InputExternal {
+					var text string
+					if err := json.Unmarshal(data.Payload, &text); err == nil && strings.TrimSpace(text) != "" {
+						blocks = append(blocks, block{kind: blockUser, text: text})
+					}
+				}
+			case sessionstore.ModelResponse:
+				for _, output := range data.Response.Output {
+					if output.Type == llm.ItemMessage {
+						if message, ok := output.Data.(llm.Message); ok && message.Role == llm.RoleAssistant && strings.TrimSpace(message.Text) != "" {
+							blocks = append(blocks, block{kind: blockAssistant, text: strings.TrimRight(message.Text, "\n")})
+						}
+					}
+				}
+			}
+		}
+		if !page.More {
+			break
+		}
+		after = page.NextAfter
+	}
+	return blocks, entry.id, nil
+}

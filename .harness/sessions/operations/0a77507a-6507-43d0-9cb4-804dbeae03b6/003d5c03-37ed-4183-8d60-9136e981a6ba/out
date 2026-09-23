@@ -1,0 +1,13 @@
+total 128
+drwxr-xr-x@ 9 zayar  staff    288 Sep 23 14:13 .
+drwxr-xr-x@ 7 zayar  staff    224 Sep 23 14:11 ..
+-rw-r--r--@ 1 zayar  staff   3511 Sep 23 13:29 agent.go
+-rw-r--r--@ 1 zayar  staff   7257 Sep 23 13:26 events.go
+-rw-r--r--@ 1 zayar  staff  20179 Sep 23 14:13 model.go
+-rw-r--r--@ 1 zayar  staff   3022 Sep 23 13:32 render_test.go
+-rw-r--r--@ 1 zayar  staff  10955 Sep 23 13:31 render.go
+-rw-r--r--@ 1 zayar  staff   3396 Sep 23 11:31 sessions.go
+-rw-r--r--@ 1 zayar  staff  10475 Sep 23 13:58 tui_test.go
+internal/tui/model.go:385:			return m.invokeSkillCommand(input, fields[0])
+internal/tui/model.go:444:// invokeSkillCommand handles /skill:name [args]: user-invoked skills are
+internal/tui/model.go:446:func (m *Model) invokeSkillCommand(input, token string) []tea.Cmd {

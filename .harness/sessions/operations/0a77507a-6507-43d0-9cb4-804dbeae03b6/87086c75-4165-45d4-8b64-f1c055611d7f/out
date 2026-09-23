@@ -1,0 +1,56 @@
+```
+
+Keys: `Enter` send · `Esc` abort turn / quit when idle · `Ctrl+C` quit ·
+`/`-commands in the editor.
+
+## Streaming contract (runner → TUI JSONL)
+
+First line: `{"type":"meta","session_id",...,"model","workspace"}` then
+session-store items (`Kind`: input/turn/model_response/tool_call_status/fork)
+and `{"type":"error"}`. The TUI decodes `model_response` output items
+(message/tool_call/reasoning) and keeps a call_id → (name, arguments) map to
+render tool cards when the matching `tool_call_status` arrives.
+
+## Tool cards
+
+- Decode arguments from the recorded `tool_call` item at card time (no I/O).
+- `Edit`: colored `- old_text` / `+ new_text` lines (collapse to ~12 lines).
+- `Write`: "create/replace path" + first lines of content, collapsed.
+- `Read`: path (+offset/limit) only.
+- `Bash`: command string truncated to one line.
+- Non-terminal statuses render as pending; terminal update replaces the card
+  line (matching by call_id in the transcript buffer).
+
+## Session picker
+
+Scan session files (mtime desc), title = first external input payload
+(decoded JSON string, collapsed to 60 runes). `↑/↓` select, `Enter` load,
+`Esc` cancel. Loading a session sets `session_id` and replays user inputs +
+assistant messages from the file into the transcript (tool cards skipped).
+
+## Out of scope (for now)
+
+- Approval prompts (see Decisions), extensions/skills, themes, mouse support,
+  image tools in the UI.
+
+## Cost alignment (added after reviewing unreallabs.ai/blog/unreal-agent)
+
+The published cost savings come from (a) minimal harness footprint — few tool
+schemas, simple prompts, no sub-agents — and (b) more tool work per turn via
+the async tool model. Their benchmark tables correlate more tool definitions
+with more tool calls and input tokens (Pi: 27–60 tools → 57–75 calls;
+unreal-agent: ~5 tools → 27–38).
+
+Consequences for this project:
+
+- **Pristine by default.** The runner now mirrors upstream exactly: Bash +
+  ViewImage (+ SkillUse when skills exist), upstream default system prompt,
+  $SHELL resolution, operation directory under the session store. No file
+  tools, no extra prompt. This is the configuration their cost numbers were
+  measured against.
+- **File tools are opt-in** via `-file-tools` (runner flag or TUI flag, or
+  `"file_tools": true` in the JSON request). They add schema tokens but may
+  save turns on edit-heavy work; treat as an empirical, per-workload choice.
+- **Usage in the status line**: the TUI accumulates per-turn and session
+  input/output tokens from model_response usage, enabling direct A/B cost
+  comparison between pristine and file-tools runs.

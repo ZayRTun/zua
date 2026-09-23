@@ -1,0 +1,40 @@
+1:# unreal-agent-tui design
+2:
+3:Decisions locked with the project owner; implement in this order.
+4:
+5:## Principles
+6:
+7:- Wrap the public unreal-agent harness; never fork it. If a feature needs
+8:  harness internals, defer until upstream supports it.
+9:- Mirror pi's UX where it is cheap to do so; diverge only where the harness
+10:  differs.
+11:
+12:## Decisions
+13:
+14:| Area | Decision |
+15:| --- | --- |
+16:| Tool safety | Auto-run all tools (pi default: no per-call approval). Revisit later; if added, gate at the operation-manager wrapper. |
+17:| Rendering | Assistant text rendered as markdown (glamour) with syntax highlighting; tool calls as collapsible cards; Edit/Write cards show colorized diffs. |
+18:| Streaming | Tool calls and statuses render as they arrive. **Token streaming deferred**: upstream's `IncludePartialMessages` is accepted but ignored — the adapter only returns complete responses and its SSE parsing is internal. Re-evaluate when the harness emits partials. |
+19:| Sessions | Slash commands: `/new`, `/resume`, `/model [id]`, `/quit`, `/help`. Session picker lists `<workspace>/.harness/sessions/*.session.jsonl` by mtime with first user input as title. |
+20:| Provider | Selected at startup via flag/env; `/model` switches model id for subsequent turns. |
+21:
+22:## UI layout (alt-screen)
+23:
+24:```
+25:┌ header ────────────────────────────────────────────┐
+26:│ unreal-agent · workspace · model · session 1a2b3c4 │
+27:├ transcript (viewport, scrolls, auto-follow) ───────┤
+28:│ ❯ user prompt (bold)                               │
+29:│ · reasoning summary (dim italic)                   │
+30:│ ⚙ Bash (bash)                                      │
+31:│ ┌ diff card: Edit main.go ─────────────────────┐   │
+32:│ │ - old line        + new line                 │   │
+33:│ └──────────────────────────────────────────────┘   │
+34:│ assistant markdown (glamour)                       │
+35:├ status ────────────────────────────────────────────┤
+36:│ working… · last turn: 1.2k in / 0.3k out           │
+37:├ editor (grows 1–8 lines with content) ─────────────┤
+38:│ ❯ _                                                │
+39:└────────────────────────────────────────────────────┘
+40:```

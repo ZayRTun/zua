@@ -1,0 +1,61 @@
+		lines = append(lines, toolStyle.Render(fmt.Sprintf("  ⋯ %d earlier lines", len(all)-maxOutput)))
+	}
+	for _, line := range shown {
+		lines = append(lines, dimStyle.Render(wrap("  | "+line, width)))
+	}
+	return lines
+}
+
+func renderDiff(oldText, newText string, width int) []string {
+	oldLines := strings.Split(strings.TrimRight(oldText, "\n"), "\n")
+	newLines := strings.Split(strings.TrimRight(newText, "\n"), "\n")
+	lines := hunkDiff(oldLines, newLines, width)
+	const maxDiffLines = 24
+	if len(lines) > maxDiffLines {
+		hidden := len(lines) - maxDiffLines
+		lines = append(lines[:maxDiffLines], toolStyle.Render(fmt.Sprintf("  … %d more changed lines", hidden)))
+	}
+	if len(lines) == 0 {
+		lines = append(lines, toolStyle.Render("  (no changes)"))
+	}
+	return lines
+}
+
+// hunkDiff computes a line-level diff (LCS-based) and renders it as hunks:
+// changed lines with up to 2 lines of surrounding context, collapsing runs of
+// unchanged lines.
+func hunkDiff(oldLines, newLines []string, width int) []string {
+	const maxInput = 400 // cap DP size; beyond this fall back to whole-block
+	if len(oldLines) > maxInput || len(newLines) > maxInput {
+		return formatChanges(oldLines, newLines, width)
+	}
+
+	// LCS table.
+	rows, cols := len(oldLines), len(newLines)
+	table := make([][]int, rows+1)
+	for i := range table {
+		table[i] = make([]int, cols+1)
+	}
+	for i := rows - 1; i >= 0; i-- {
+		for j := cols - 1; j >= 0; j-- {
+			if oldLines[i] == newLines[j] {
+				table[i][j] = table[i+1][j+1] + 1
+			} else {
+				table[i][j] = max(table[i+1][j], table[i][j+1])
+			}
+		}
+	}
+
+	// Walk to ops: unchanged, deleted (-), added (+).
+	const (
+		opSame = iota
+		opDel
+		opAdd
+	)
+	type op struct {
+		kind int
+		text string
+	}
+	var ops []op
+	i, j := 0, 0
+	for i < rows && j < cols {

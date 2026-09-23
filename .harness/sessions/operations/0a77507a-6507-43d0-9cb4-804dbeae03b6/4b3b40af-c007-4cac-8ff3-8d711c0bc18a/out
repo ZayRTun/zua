@@ -1,0 +1,8 @@
+docs updated
+DESIGN.md:19:| Sessions | Slash commands: `/new`, `/resume`, `/model [id]`, `/reload`, `/skills`, `/quit`, `/help`. Session picker lists `<workspace>/.harness/sessions/*.session.jsonl` by mtime with first user input as title. |
+DESIGN.md:56:- `Edit`: real line-level diff (LCS in `hunkDiff`) rendered as hunks — changed
+DESIGN.md:79:  `/reload`; deep extension support remains out of scope.)
+DESIGN.md:81:## Transcript behavior (added with the v2 rendering pass)
+DESIGN.md:102:- **Live config surfacing.** `/reload` re-discovers workspace skills and
+README.md:60:- Slash commands: `/new`, `/resume` (session picker), `/model [id]`, `/reload`, `/skills`, `/help`, `/quit`
+README.md:110:`/skills` lists discoveries, `/reload` re-scans.

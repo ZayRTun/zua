@@ -1,0 +1,40 @@
+package tui
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"strings"
+
+	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/glamour"
+	"github.com/charmbracelet/lipgloss"
+)
+
+// ---- transcript rendering ----
+
+func (m *Model) renderTranscript() string {
+	width := max(m.viewport.Width-1, 20)
+	parts := make([]string, 0, len(m.blocks))
+	for index := range m.blocks {
+		b := &m.blocks[index]
+		if b.rendered != "" && b.width == width {
+			// Cached: re-renders only new or resized blocks, so a long
+			// session stays O(new blocks) per event instead of O(all).
+			parts = append(parts, b.rendered)
+			continue
+		}
+		if line := m.renderBlock(b, width); line != "" {
+			b.rendered, b.width = line, width
+			parts = append(parts, line)
+		}
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+func (m *Model) renderBlock(b *block, width int) string {
+	// Per-block cache: between events only one or two blocks change, so most
+	// renders are pure cache hits (keeps long sessions from re-wrapping
+	// everything on every tool status).
+	if b.rendered != "" && b.width == width {

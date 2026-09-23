@@ -1,0 +1,13 @@
+	case "/help":
+		m.appendBlock(block{kind: blockMeta, text: strings.Join([]string{
+			"commands:",
+			"  /new              start a fresh session",
+			"  /resume           pick a previous session",
+			"  /model [id]       show or set the model",
+			"  /reload           re-discover workspace skills & report active config",
+			"  /quit             exit (alias /exit)",
+			"keys: Enter send · Esc abort/quit · Ctrl+C quit",
+		}, "\n")})
+	default:
+		if strings.HasPrefix(fields[0], "/skill:") {
+			return m.invokeSkillCommand(input, fields[0])

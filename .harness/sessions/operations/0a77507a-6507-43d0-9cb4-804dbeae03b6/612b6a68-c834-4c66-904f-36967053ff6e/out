@@ -1,0 +1,52 @@
+		}
+	}
+	return false
+}
+
+// buildTools mirrors upstream's tool configuration exactly (same shell
+// resolution, skill discovery, and enabled names); when useFileTools is true
+// the Read/Write/Edit tools are added on top.
+func buildTools(
+	ctx context.Context,
+	workspace, storeDirectory string,
+	sessionID session.ID,
+	useFileTools bool,
+	skillDirs []string,
+	home string,
+) (tool.Registry, operation.Manager, error) {
+	shell := strings.TrimSpace(os.Getenv("SHELL"))
+	if shell == "" {
+		shell = "/bin/sh"
+	}
+	operationDirectory := filepath.Join(storeDirectory, "operations", string(sessionID))
+	if err := os.MkdirAll(operationDirectory, 0o700); err != nil {
+		return nil, nil, fmt.Errorf("create operation directory: %w", err)
+	}
+	// Skills: pi-style discovery — harness-native .harness/skills plus project
+	// and user .agents/skills locations — then register every non-flagged skill
+	// as a model tool (the harness's way of advertising skills). Skills with
+	// disable-model-invocation: true are NOT registered (zero token cost); the
+	// TUI exposes them via /skill:name. First location wins on name collisions.
+	var skillEntries []tool.Skill
+	for _, entry := range skills.Discover(skills.DefaultDirs(workspace, getenv("HOME"))) {
+		if entry.UserOnly {
+			continue
+		}
+		skillEntries = append(skillEntries, tool.Skill{Name: entry.Name, Description: entry.Description, Path: entry.Path})
+	}
+	names := []string{tool.BashName, tool.ViewImageName}
+	if len(skillEntries) != 0 {
+		names = append(names, tool.SkillUseName)
+	}
+	static := tool.StaticTranslators{
+		Bash:      bash.New(bash.Config{Shell: shell, Directory: workspace, BaseDirectory: operationDirectory}),
+		ViewImage: viewimage.New(viewimage.Config{Directory: workspace}),
+	}
+	inner := tool.NewRegistry(static, names...)
+	for _, skill := range skillEntries {
+		if _, err := inner.RegisterSkill(skill); err != nil {
+			return nil, nil, fmt.Errorf("register skill %q: %w", skill.Path, err)
+		}
+	}
+	local := operation.NewLocalOperationManager(ctx)
+fatal: not a git repository (or any of the parent directories): .git

@@ -1,0 +1,68 @@
+internal/tui/model.go:249:			if isOSCGarbage(msg) {
+internal/tui/model.go:367:		m.appendBlock(block{kind: blockMeta, text: m.reloadReport()})
+internal/tui/model.go:591:// reloadReport re-scans the workspace's discoverable resources and reports
+internal/tui/model.go:594:func (m *Model) reloadReport() string {
+internal/tui/render.go:353:// isOSCGarbage detects terminal control-sequence replies that leak in as
+internal/tui/render.go:357:func isOSCGarbage(msg tea.Msg) bool {
+internal/tui/tui_test.go:193:	report := m.reloadReport()
+					if strings.HasPrefix(input, "/") {
+						cmds = append(cmds, m.command(input)...)
+					} else {
+						m.beginTurn(input, input)
+						cmds = append(cmds, m.spinner.Tick)
+					}
+				}
+			}
+		default:
+			if isOSCGarbage(msg) {
+				// Terminal query responses (OSC 10/11 color reports) that race
+				// with input reading must never reach the editor.
+				return m, nil
+			}
+			m.textarea, _ = m.textarea.Update(msg)
+			m.resizeEditor()
+		}
+	}
+	// While a turn is active, exactly one listen() must be pending at any
+	// time; whatever message was just handled consumed it, so re-arm here on
+	// every path. When the turn ends (turnDoneMsg sets running=false) the
+	// chain stops naturally.
+	if m.running && m.events != nil {
+		cmds = append(cmds, m.listen())
+	}
+	if isScrollKey(message) {
+		var cmd tea.Cmd
+		m.viewport, cmd = m.viewport.Update(message)
+		cmds = append(cmds, cmd)
+	}
+	return m, tea.Batch(cmds...)
+}
+
+// isScrollKey reports whether a message is a transcript-scrolling key.
+// The viewport's default keymap also binds vi-style u/d/f/b/space to paging —
+// forwarding those while the user is typing made the transcript jump.
+func isScrollKey(message tea.Msg) bool {
+	key, ok := message.(tea.KeyMsg)
+	if !ok {
+		return false
+	}
+	switch key.String() {
+	case "pgup", "pgdown", "home", "end", "up", "down", "ctrl+u", "ctrl+d":
+		return true
+	}
+	return false
+}
+
+func (m *Model) resizeEditor() {
+	lines := strings.Count(m.textarea.Value(), "\n") + 1
+	m.textarea.SetHeight(min(max(lines, 1), 8))
+}
+
+func (m *Model) appendBlock(b block) {
+	if b.kind == blockTool && b.tool != nil {
+		if _, exists := m.toolBlocks[b.tool.callID]; exists {
+			return
+		}
+		m.toolBlocks[b.tool.callID] = len(m.blocks)
+	}
+	m.blocks = append(m.blocks, b)

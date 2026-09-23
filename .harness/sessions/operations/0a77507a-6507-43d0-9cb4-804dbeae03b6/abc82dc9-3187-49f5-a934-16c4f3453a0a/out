@@ -1,0 +1,51 @@
+		m.appendBlock(block{kind: blockMeta, text: "session " + short(msg.sessionID) + " · " + msg.model + " · " + m.workspace})
+	case usageMsg:
+		m.turnUsage = [2]int64{msg.in, msg.out}
+		m.sessionIn += msg.in
+		m.sessionOut += msg.out
+		m.refresh()
+	case blockMsg:
+		m.appendBlock(msg.b)
+	case toolStatusMsg:
+		m.updateToolCard(msg)
+		// Tool output is live information; re-pin only if the user is reading
+		// the tail — otherwise keep their scroll position.
+		if m.viewport.AtBottom() {
+			m.viewport.GotoBottom()
+		}
+	case sessionsMsg:
+		m.loading = false
+		if msg.err != nil {
+			m.appendBlock(block{kind: blockError, text: "list sessions: " + msg.err.Error()})
+		} else {
+			m.picking = true
+			m.sessions = msg.entries
+			m.pickIndex = 0
+		}
+		m.refresh()
+	case turnDoneMsg:
+		m.running = false
+		m.cmdCancel = nil
+		if m.aborted {
+			m.appendBlock(block{kind: blockDivider, text: "turn aborted"})
+			m.aborted = false
+		} else if msg.err != nil {
+			m.appendBlock(block{kind: blockError, text: "agent exited: " + msg.err.Error()})
+		}
+		m.refresh()
+	case tea.KeyMsg:
+176:func hunkDiff(oldLines, newLines []string, width int) []string {
+277:func formatChanges(oldLines, newLines []string, width int) []string {
+		fileTools:  fileTools,
+		textarea:   ta,
+		viewport:   viewport.New(80, 20),
+		spinner:    spinner.New(spinner.WithSpinner(spinner.MiniDot)),
+		toolBlocks: map[string]int{},
+		follow:     true,
+	}
+}
+
+func (m Model) Init() tea.Cmd {
+	return tea.Batch(textarea.Blink, m.spinner.Tick)
+}
+
