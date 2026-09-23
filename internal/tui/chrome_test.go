@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -24,6 +25,49 @@ func sizeModel(t *testing.T, m Model, width, height int) Model {
 	t.Helper()
 	current, _ := tea.Model(m).Update(tea.WindowSizeMsg{Width: width, Height: height})
 	return current.(Model)
+}
+
+// TestStartupOpensLauncher pins that zua boots into the launcher: Init
+// issues the session load, and the resulting sessionsMsg opens the picker
+// so the Header is the first thing the user sees (the reference launcher).
+func TestStartupOpensLauncher(t *testing.T) {
+	workspace := t.TempDir()
+	m := sizeModel(t, New(workspace, settings.Settings{Model: "glm-5.3-flash", ThinkingLevel: "high"}, nil), 160, 30)
+
+	// Init's batch must include a command that produces a sessionsMsg.
+	batch, ok := m.Init()().(tea.BatchMsg)
+	if !ok {
+		t.Fatalf("Init returned %T, want tea.BatchMsg", m.Init()())
+	}
+	var loaded bool
+	for _, cmd := range batch {
+		done := make(chan tea.Msg, 1)
+		go func() { done <- cmd() }()
+		select {
+		case msg := <-done:
+			if _, ok := msg.(sessionsMsg); ok {
+				loaded = true
+			}
+		case <-time.After(2 * time.Second):
+			// Long-lived cmd (cursor blink); nothing to assert on.
+		}
+	}
+	if !loaded {
+		t.Fatal("startup does not load sessions — the launcher never opens")
+	}
+
+	// When the list lands, the launcher opens with the Header visible.
+	current, _ := tea.Model(m).Update(sessionsMsg{entries: []sessionEntry{{title: "old work", updated: "2m ago"}}})
+	m = current.(Model)
+	if !m.picking {
+		t.Fatal("sessionsMsg must open the launcher at startup")
+	}
+	view := stripANSI(m.View())
+	for _, want := range []string{"zua", workspace, "GLM-5.3-Flash · high", "old work"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("startup launcher missing %q:\n%s", want, view)
+		}
+	}
 }
 
 func TestUsageLineShowsModel(t *testing.T) {

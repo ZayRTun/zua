@@ -282,3 +282,13 @@ Go subscription makes per-token cost optimization moot, so the modes die):
   cost > 0; zero cache buckets stay hidden (pi-style noise avoidance —
   judgement call on the literal format). `catalog.Cost` takes a named
   `catalog.Usage` struct so the cache buckets cannot be swapped silently.
+
+## Launcher opens at startup (follow-up from real use)
+
+The reskin spec said the launcher shows the Header but never pinned when
+the launcher opens; pre-reskin code only loaded sessions on `/resume`, so
+plain `zua` booted straight into the transcript — where the Header is
+deliberately absent. `Init()` now issues the session load on startup: the
+launcher is the first screen (reference-launcher behavior), the Header
+above the picker; Esc dismisses to the transcript as before. Pinned by
+`TestStartupOpensLauncher` through the real Update → View seam.

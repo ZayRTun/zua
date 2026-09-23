@@ -129,7 +129,10 @@ func New(workspace string, cfg settings.Settings, skillDirs []string) Model {
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(textarea.Blink, m.spinner.Tick)
+	// Boot into the launcher: the session load lands as sessionsMsg, which
+	// opens the picker — the Header is the first thing the user sees, like
+	// the reference launcher. Esc dismisses to the transcript.
+	return tea.Batch(listSessions(m.workspace), textarea.Blink, m.spinner.Tick)
 }
 
 // ---- messages ----
