@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	termenv "github.com/muesli/termenv"
 
 	"unreal-agent-tui/internal/settings"
 )
@@ -22,6 +23,23 @@ func resize(t *testing.T, width, height int) Model {
 // TestComposerRendersRules checks the Composer is a thin rule above, the
 // accent ❯ prompt with the input, and a rule below — never a rounded
 // border box (primary seam: Update → View).
+// TestComposerBareUnderColorProfile pins that the Composer paints no
+// background of its own: bubbles' focused cursor-line style leaks a black
+// background that fills the whole line under color terminals, which reads
+// as a bar across the Composer.
+func TestComposerBareUnderColorProfile(t *testing.T) {
+	prior := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.ANSI)
+	defer lipgloss.SetColorProfile(prior)
+	m := sizeModel(t, New(t.TempDir(), settings.Settings{}, nil), 80, 30)
+	raw := m.renderComposer()
+	for _, banned := range []string{"\x1b[40m", "\x1b[41m", "\x1b[47m", "\x1b[48;", "\x1b[49m"} {
+		if strings.Contains(raw, banned) {
+			t.Fatalf("composer paints a background (%q):\n%q", banned, raw)
+		}
+	}
+}
+
 func TestComposerRendersRules(t *testing.T) {
 	m := resize(t, 100, 30)
 	m.textarea.SetValue("build the thing")

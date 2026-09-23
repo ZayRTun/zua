@@ -105,15 +105,19 @@ func New(workspace string, cfg settings.Settings, skillDirs []string) Model {
 	}
 	ta := textarea.New()
 	// The Composer draws its own accent ❯ prompt; the textarea itself stays
-	// bare — no prompt glyph, no line-number gutter, no placeholder.
+	// bare — no prompt glyph, no line-number gutter, no placeholder — and
+	// no cursor-line background: bubbles' focused style paints a black
+	// background across the cursor line, which renders as a bar over the
+	// terminal's own background.
 	ta.Prompt = ""
 	ta.ShowLineNumbers = false
+	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
+	ta.BlurredStyle.CursorLine = lipgloss.NewStyle()
 	ta.CharLimit = 32_000
 	// 78 = 80-wide terminal minus the two columns of the ❯ prompt.
 	ta.SetWidth(78)
 	ta.SetHeight(1)
 	ta.Focus()
-	ta.ShowLineNumbers = false
 
 	m := Model{
 		workspace:  absolute,
