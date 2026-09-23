@@ -24,6 +24,18 @@ _Avoid_: item, entry, message (reserved for what the model said)
 The transcript rendering of one tool call — its name, arguments, and outcome.
 _Avoid_: tool call display, action
 
+**Collapsed Entry**:
+The single-line form of a tool card (⏺ name(args) ⎿ outcome) shown when the transcript is not verbose.
+_Avoid_: summary line, folded card
+
+**Verbose Transcript**:
+The transcript expanded to show every tool card in full; toggled with ctrl+o.
+_Avoid_: debug view, full mode
+
+**Command Menu**:
+The autocomplete popup above the prompt box, listing slash commands and user-invoked skills matching the typed prefix; enter accepts, it does not send.
+_Avoid_: autocomplete dropdown, suggestion list
+
 **Tool Call**:
 An invocation the model requested, identified by its call_id; distinct from its card.
 _Avoid_: (always distinguish from Tool Card)

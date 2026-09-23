@@ -72,12 +72,40 @@ Scan session files (mtime desc), title = first external input payload
 `Esc` cancel. Loading a session sets `session_id` and replays user inputs +
 assistant messages from the file into the transcript (tool cards skipped).
 
-## UI redesign (2025-09-23, in planning)
+## UI redesign (2025-09-23, locked with project owner)
 
-Locked scope: visual reskin + interaction feel (collapsible transcript
-entries, transcript-expand toggle, redesigned prompt box) in alt-screen.
-No token streaming (upstream constraint unchanged). Frozen: runner JSONL
-contract, session format, CLI flags. Keybindings may evolve.
+Scope: visual reskin + interaction feel (option b). Full CC clone features
+(`!` bash mode, `@` file mentions, `#` shortcuts) stay out of scope.
+
+**Rendering**: stays alt-screen (deliberate rejection of CC's inline model —
+keep viewport-managed scrolling, mouse support). Prompt box is the redesigned
+surface, not the render model.
+
+**Prompt box**: rounded-corner bordered box, dim border brightening on focus,
+`> ` prompt inside, contextual dim hint line below
+(`shift+enter newline · ctrl+o verbose · /help commands`; hidden while a turn
+runs). Keys unchanged: Enter sends, shift/alt+enter newline.
+
+**Command Menu**: popup above the box when input starts with `/`; static
+commands plus dynamic `/skill:name` entries (user-invoked skills from
+frontmatter). Case-insensitive prefix filter. ↑/↓ select (not scroll), tab
+completes, esc dismisses (before quit), **enter accepts into the input —
+does not send**; a second enter sends. CC-identical.
+
+**Transcript**: tool cards collapse to one-line Collapsed Entries by default
+(⏺ Bash($ cmd) ⎿ ok · Read: path+lines · Write: path+bytes · Edit: path
++added/-removed, computed at render time from decoded args). ctrl+o toggles
+Verbose Transcript in place — dual rendering per block, keyed with the
+per-block cache; fresh cards render collapsed while collapsed. User prompts
+and assistant messages never collapse.
+
+**Chrome**: glamour auto-style kept for markdown; header/cards/status line
+restyle to dim gray + accent 12. Respect NO_COLOR. Spinner adopts randomized
+gerund verbs. Status line gains mode (pristine/file-tools) and model.
+Mouse cell-motion kept.
+
+**Frozen**: runner JSONL contract, session file format, CLI flags.
+Token streaming remains deferred (upstream constraint).
 
 ## Out of scope (for now)
 
