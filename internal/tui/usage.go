@@ -49,7 +49,7 @@ func (m Model) usageLine() string {
 			segments = append(segments, formatCost(cost))
 		}
 		if m.turnIn > 0 && entry.ContextWindow > 0 {
-			pct, level := m.usageContext(m.turnIn)
+			pct, level := m.usageContext(entry, m.turnIn)
 			segment := fmt.Sprintf("%.1f%%/%s", pct, formatTokens(entry.ContextWindow))
 			switch level {
 			case "error":
@@ -59,9 +59,11 @@ func (m Model) usageLine() string {
 			}
 			segments = append(segments, segment)
 		}
-		if autoCompactionVerified {
-			segments = append(segments, "(auto)")
-		}
+	}
+	// The (auto) segment is independent of the catalog: a catalog-missing
+	// model must still be able to render it once the gate is real.
+	if autoCompactionVerified {
+		segments = append(segments, "(auto)")
 	}
 	line := strings.Join(segments, " ")
 	if line != "" {
@@ -78,12 +80,11 @@ func (m Model) usageLine() string {
 	return m.truncateToWidth(line)
 }
 
-// usageContext returns the latest turn's share of the catalog context
+// usageContext returns the prompt tokens' share of the entry's context
 // window as (percent, level): level "warn" past 70%, "error" past 90%, ""
 // (plain) below. Ascii profiles degrade the colors themselves.
-func (m Model) usageContext(promptTokens int64) (float64, string) {
-	entry, ok := catalog.Lookup(m.cfg.Model)
-	if !ok || entry.ContextWindow <= 0 || promptTokens <= 0 {
+func (m Model) usageContext(entry catalog.Model, promptTokens int64) (float64, string) {
+	if entry.ContextWindow <= 0 || promptTokens <= 0 {
 		return 0, ""
 	}
 	pct := float64(promptTokens) / float64(entry.ContextWindow) * 100

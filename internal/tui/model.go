@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	"unreal-agent-tui/internal/catalog"
 	"unreal-agent-tui/internal/settings"
 	"unreal-agent-tui/internal/skills"
 
@@ -784,9 +785,11 @@ const logoArt = `████████████
 
 // headerStats is the launcher's live stats line: model · thinking level ·
 // skills count. It reads current state on every render, so /reload's
-// re-discovery shows up the next time the launcher opens.
+// re-discovery shows up the next time the launcher opens. The model is
+// prettified here only (catalog display name, raw fallback); the Usage
+// Line keeps the raw id, matching pi.
 func (m Model) headerStats() string {
-	return orDefault(m.cfg.Model, "(default model)") +
+	return orDefault(catalog.Prettify(m.cfg.Model), "(default model)") +
 		" · " + orDefault(m.cfg.ThinkingLevel, "high") +
 		" · " + itoa(int64(len(m.skills))) + " skills"
 }

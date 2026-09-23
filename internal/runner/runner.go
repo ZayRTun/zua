@@ -247,7 +247,9 @@ func run(ctx context.Context, args []string, getenv func(string) string, output 
 	// description + path) in the system prompt — the model loads full
 	// instructions on demand via the SkillUse tool.
 	builder := contextbuilder.NewBuilder(registeredSkills...)
-	builder.SetModel(llm.Model{ID: model, ReasoningEffort: reasoningEffort(request.ThinkingLevel)})
+	// Resolved settings, not the raw request field: thinking_level lives in
+	// the Settings File, which the request does not carry.
+	builder.SetModel(llm.Model{ID: model, ReasoningEffort: reasoningEffort(cfg.ThinkingLevel)})
 	builder.SetSystemPrompt(systemPrompt(request))
 	for _, definition := range registry.StaticDefinitions() {
 		builder.AddTool(definition.Tool)

@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"unreal-agent-tui/internal/catalog"
 	"unreal-agent-tui/internal/settings"
 )
 
@@ -129,7 +130,8 @@ func TestUsageLineContextColorized(t *testing.T) {
 	}
 	for prompt, want := range cases {
 		m := sizeModel(t, New(t.TempDir(), settings.Settings{Model: "glm-5.3-flash"}, nil), 100, 30)
-		_, level := m.usageContext(prompt)
+		entry, _ := catalog.Lookup("glm-5.3-flash")
+		_, level := m.usageContext(entry, prompt)
 		if level != want {
 			t.Fatalf("context level at %d prompt tokens = %q, want %q", prompt, level, want)
 		}

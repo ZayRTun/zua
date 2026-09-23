@@ -1,6 +1,6 @@
 package tui
 
-// Chrome restyle tests (issue #6): status line mode+model, spinner verbs,
+// Chrome tests: Header, Usage Line, NO_COLOR degradation, spinner verbs,
 // dim-gray + accent-12 palette, and NO_COLOR / narrow-width degradation.
 // All assertions go through the Update → View seam; palette checks use style
 // getters (lipgloss renders Ascii in the no-TTY test environment).
@@ -26,25 +26,25 @@ func sizeModel(t *testing.T, m Model, width, height int) Model {
 	return current.(Model)
 }
 
-func TestStatusLineShowsModel(t *testing.T) {
+func TestUsageLineShowsModel(t *testing.T) {
 	// Provider default model.
 	m := resize(t, 100, 30)
 	view := stripANSI(m.View())
 	if !strings.Contains(view, "(default model)") {
-		t.Fatalf("status line missing model id:\n%s", view)
+		t.Fatalf("Usage Line missing model id:\n%s", view)
 	}
 	// No mode label: the tool configuration has no mode concept (glossary).
 	if strings.Contains(view, "pristine") || strings.Contains(view, "file-tools") {
-		t.Fatalf("status line must not show a mode label:\n%s", view)
+		t.Fatalf("Usage Line must not show a mode label:\n%s", view)
 	}
 
-	// /model sets the model id, visible in the status line.
+	// /model sets the model id, visible in the Usage Line.
 	m = sizeModel(t, New(t.TempDir(), settings.Settings{}, nil), 100, 30)
 	m = typeKeys(t, m, "/model claude-sonnet-4-5")
 	current, _ := tea.Model(m).Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = current.(Model)
 	if view = stripANSI(m.View()); !strings.Contains(view, "claude-sonnet-4-5") {
-		t.Fatalf("status line missing set model id:\n%s", view)
+		t.Fatalf("Usage Line missing set model id:\n%s", view)
 	}
 }
 
@@ -222,7 +222,7 @@ func TestLauncherShowsHeader(t *testing.T) {
 		t.Fatal("sessionsMsg must open the launcher")
 	}
 	view := stripANSI(m.View())
-	stats := "glm-5.3-flash · high · " + itoa(int64(len(m.skills))) + " skills"
+	stats := "GLM-5.3-Flash · high · " + itoa(int64(len(m.skills))) + " skills"
 	for _, want := range []string{"zua", workspace, stats, "old work", "❯"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("launcher missing %q:\n%s", want, view)

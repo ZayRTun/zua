@@ -84,10 +84,9 @@ Scope: visual reskin + interaction feel (option b). Full CC clone features
 keep viewport-managed scrolling, mouse support). Composer is the redesigned
 surface, not the render model.
 
-**Composer**: rounded-corner bordered box, dim border brightening on focus,
-`> ` prompt inside, contextual dim hint line below
-(`shift+enter newline · ctrl+o verbose · /help commands`; hidden while a turn
-runs). Keys unchanged: Enter sends, shift/alt+enter newline (works both
+**Composer**: thin dim rule, accent `❯` prompt, editor, thin dim rule — no
+border, no placeholder, no hint line (the hint chrome was replaced by the
+Usage Line). Keys unchanged: Enter sends, shift/alt+enter newline (works both
 as raw esc+return and as disambiguated CSI-u / modifyOtherKeys
 sequences, which bubbletea v1 drops — surfaced via a tea.WithFilter
 CSI translator).
@@ -98,10 +97,10 @@ frontmatter). Case-insensitive prefix filter. ↑/↓ select (not scroll), tab
 completes, esc dismisses (before quit), **enter accepts into the input —
 does not send**; a second enter sends. CC-identical.
 
-**Chrome palette**: header, Tool Cards, and Status Line use a dim-gray
+**Chrome palette**: header, Tool Cards, and Usage Line use a dim-gray
 + single-accent palette (accent 12); assistant markdown keeps glamour
-auto-style. Status Line shows the current model id next to working/idle +
-usage — the tool configuration has no mode concept (amended 2026-07: modes
+auto-style. Usage Line shows the current model id next to the usage
+segments — the tool configuration has no mode concept (amended 2026-07: modes
 retired). While a Turn runs the spinner
 shows a randomized gerund verb (chosen per turn, rendered dim). All
 chrome degrades to plain text under NO_COLOR / no-color terminals.
@@ -116,9 +115,9 @@ Verbose Transcript in place — dual rendering per block, keyed with the
 per-block cache; fresh cards render collapsed while collapsed. User prompts
 and assistant messages never collapse.
 
-**Chrome**: glamour auto-style kept for markdown; header/cards/status line
+**Chrome**: glamour auto-style kept for markdown; header/cards/Usage Line
 restyle to dim gray + accent 12. Respect NO_COLOR. Spinner adopts randomized
-gerund verbs. Status line shows model id. Mouse cell-motion kept.
+gerund verbs. Usage Line ends with the raw model id. Mouse cell-motion kept.
 
 **Frozen**: runner JSONL contract, session file format. Token streaming
 remains deferred (upstream constraint). Amended 2026-07 (issue #9): the
@@ -176,8 +175,8 @@ Go subscription makes per-token cost optimization moot, so the modes die):
   directory under the session store.
 - ~~**File tools are opt-in** via `-file-tools`...~~ Retired. There is no
   mode flag, no `file_tools` request field, no mode label anywhere.
-- **Usage in the status line**: the TUI accumulates per-turn and session
-  input/output tokens from model_response usage.
+- **Usage in the Usage Line**: the TUI accumulates per-turn and session
+  input/output/cache token counts from model_response usage.
 
 ## Settings File (added with the settings ticket, issue #10)
 

@@ -8,7 +8,10 @@ package catalog
 
 // Model is one catalog entry.
 type Model struct {
-	ID            string
+	ID string
+	// DisplayName is the prettified name for chrome, e.g. "GLM-5.3-Flash"
+	// (the Usage Line always keeps the raw id, matching pi).
+	DisplayName   string
 	ContextWindow int64
 	MaxTokens     int64
 
@@ -27,6 +30,7 @@ type Model struct {
 var models = map[string]Model{
 	"glm-5.3-flash": {
 		ID:            "glm-5.3-flash",
+		DisplayName:   "GLM-5.3-Flash",
 		ContextWindow: 1_000_000,
 		MaxTokens:     131_072,
 		InputPerM:     0.15,
@@ -40,6 +44,17 @@ var models = map[string]Model{
 func Lookup(id string) (Model, bool) {
 	entry, ok := models[id]
 	return entry, ok
+}
+
+// Prettify resolves a model id to its display name for chrome. Prettified
+// names are catalog data, so catalog-missing ids render raw — never
+// invented.
+func Prettify(id string) string {
+	entry, ok := models[id]
+	if !ok || entry.DisplayName == "" {
+		return id
+	}
+	return entry.DisplayName
 }
 
 // Usage is one response's token buckets. Input is inclusive — it already

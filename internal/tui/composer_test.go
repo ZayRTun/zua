@@ -171,7 +171,7 @@ func TestCSIFilterPassthrough(t *testing.T) {
 }
 
 // TestComposerRespectsWidth checks the composer's rules, prompt line, and
-// status line never overflow a narrow terminal.
+// Usage Line never overflows a narrow terminal.
 func TestComposerRespectsWidth(t *testing.T) {
 	m := resize(t, 40, 20)
 	view := m.View()
@@ -188,7 +188,7 @@ func TestComposerRespectsWidth(t *testing.T) {
 }
 
 // TestLayoutHeightIsDynamic pins the structural requirement: the bottom
-// section's height is computed from its parts (status line, Command Menu,
+// section's height is computed from its parts (Usage Line, Command Menu,
 // Composer rules + editor lines), never hardcoded, so the viewport absorbs
 // the difference.
 func TestLayoutHeightIsDynamic(t *testing.T) {

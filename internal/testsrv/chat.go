@@ -41,7 +41,7 @@ func NewChatCompletions(t *testing.T) (*httptest.Server, func() []ChatExchange) 
 		if r.Header.Get("x-opencode-session") == "" {
 			// Literal mirrors opencodego.SessionHeader; a testsrv import of
 			// opencodego would cycle, so the coupling is by convention only.
-			writeChatError(t, w, http.StatusBadRequest, "MissingSessionID", "Requests must include the x-opencode-session header.")
+			writeChatError(w, http.StatusBadRequest, "MissingSessionID", "Requests must include the x-opencode-session header.")
 			return
 		}
 		var request struct {
@@ -90,15 +90,16 @@ func NewChatCompletions(t *testing.T) (*httptest.Server, func() []ChatExchange) 
 	return server, snapshot
 }
 
-func writeChatError(t *testing.T, w http.ResponseWriter, status int, code string, message string) {
-	t.Helper()
+// writeChatError is called from the HTTP handler goroutine, so it must not
+// use t.Fatal (only valid on the test goroutine). Marshaling a literal map
+// cannot fail; if it somehow did, the client just sees a truncated body.
+func writeChatError(w http.ResponseWriter, status int, code string, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	encoded, err := json.Marshal(map[string]any{
 		"error": map[string]string{"code": code, "message": message},
 	})
-	if err != nil {
-		t.Fatal(err)
+	if err == nil {
+		w.Write(encoded)
 	}
-	w.Write(encoded)
 }
