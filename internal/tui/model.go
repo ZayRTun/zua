@@ -227,10 +227,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch msg.Type {
 		case tea.KeyCtrlO:
+			// The per-block render cache is keyed on the verbose flag, so
+			// dual-rendered blocks re-render lazily — no cache wipe needed.
 			m.verbose = !m.verbose
-			for index := range m.blocks {
-				m.blocks[index].rendered = ""
-			}
 			m.refresh()
 		case tea.KeyCtrlC:
 			if m.running && m.cmdCancel != nil {
@@ -633,11 +632,18 @@ func (m *Model) acceptMenuItem(item menuItem) {
 	m.resizeEditor()
 }
 
+// clampIndex keeps a selection inside [0, n). Pure, so rendering can clamp
+// without writing state.
+func clampIndex(index, n int) int {
+	if index >= n {
+		return 0
+	}
+	return index
+}
+
 // clampMenuIndex keeps the selection inside the current match list.
 func (m *Model) clampMenuIndex(matches []menuItem) {
-	if m.menuIndex >= len(matches) {
-		m.menuIndex = 0
-	}
+	m.menuIndex = clampIndex(m.menuIndex, len(matches))
 }
 
 // setViewportHeight sizes the transcript viewport to whatever the bottom
@@ -769,16 +775,16 @@ func (m Model) truncateToWidth(s string) string {
 // current model id, and per-turn/session token usage. The whole line is
 // truncated to the terminal width so narrow terminals never overflow.
 func (m Model) statusLine() string {
+	metadata := dimStyle.Render("  ·  " + m.toolMode() + "  ·  " + orDefault(m.model, "(default model)"))
 	var status string
 	if m.loading {
-		status = statusStyle.Render(m.spinner.View() + " loading sessions…")
+		status = statusStyle.Render(m.spinner.View()+" loading sessions…") + metadata
 	} else if m.running {
 		status = statusStyle.Render(m.spinner.View()) + " " +
-			dimStyle.Render(orDefault(m.turnVerb, "working…"))
+			dimStyle.Render(orDefault(m.turnVerb, "working…")) + metadata
 	} else {
-		status = dimStyle.Render("idle")
+		status = dimStyle.Render("idle") + metadata
 	}
-	status += dimStyle.Render("  ·  " + m.toolMode() + "  ·  " + orDefault(m.model, "(default model)"))
 	if m.sessionIn > 0 || m.sessionOut > 0 {
 		status += dimStyle.Render("  ·  last turn: " + humanCount(m.turnUsage[0]) + " in / " + humanCount(m.turnUsage[1]) + " out")
 		status += dimStyle.Render("  ·  session: " + humanCount(m.sessionIn) + " in / " + humanCount(m.sessionOut) + " out")
@@ -836,7 +842,7 @@ const hintText = "shift+enter newline · ctrl+o verbose · /help commands"
 // renderHints renders the dim hint line below the box, clipped to the
 // terminal width so narrow sizes never wrap or overflow.
 func (m Model) renderHints() string {
-	return truncate.String(dimStyle.Render(hintText), uint(max(m.width, 1)))
+	return m.truncateToWidth(dimStyle.Render(hintText))
 }
 
 // viewMenu renders the Command Menu above the Prompt Box: filtered
@@ -844,10 +850,7 @@ func (m Model) renderHints() string {
 // maxMenuRows rows and every row is clipped to the terminal width.
 func (m *Model) viewMenu() string {
 	matches := m.menuMatches()
-	selected := m.menuIndex
-	if selected >= len(matches) { // rendering must not write state
-		selected = 0
-	}
+	selected := clampIndex(m.menuIndex, len(matches)) // rendering must not write state
 	const maxMenuRows = 8
 	var out []string
 	for index, item := range matches {
@@ -863,7 +866,7 @@ func (m *Model) viewMenu() string {
 	footer := fmt.Sprintf("(%d/%d)  ↑/↓ select · Tab complete · Enter accept · Esc dismiss", selected+1, len(matches))
 	out = append(out, dimStyle.Render(footer))
 	for index := range out {
-		out[index] = truncate.String(out[index], uint(max(m.width, 1)))
+		out[index] = m.truncateToWidth(out[index])
 	}
 	return strings.Join(out, "\n")
 }
@@ -876,7 +879,7 @@ var (
 	dimStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
 	errorStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
 	okStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("12")) // ok tool glyphs
-	statusStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("12")) // spinner/menu/picker accent — deliberately the same accent as okStyle; split only intentionally
+	statusStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("12")) // spinner/menu/picker accent; same accent as okStyle on purpose — split deliberately if their needs diverge
 	diffAddStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
 	diffDelStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
 )

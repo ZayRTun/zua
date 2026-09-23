@@ -148,5 +148,6 @@ func applyReplayStatus(card *toolCard, status sessionstore.ToolCallStatus) {
 		}
 		ops = append(ops, wire)
 	}
-	card.status, card.errText, card.outText, card.exitCode = resolveCallStatus(status.Status.Error, ops)
+	cs := resolveCallStatus(status.Status.Error, ops)
+	card.status, card.errText, card.outText, card.exitCode = cs.status, cs.errText, cs.outText, cs.exitCode
 }

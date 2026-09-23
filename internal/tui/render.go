@@ -98,16 +98,29 @@ func (m *Model) renderMarkdown(b *block, width int) string {
 	return b.rendered
 }
 
+// toolStatusStyle maps a tool-card status to its color: accent for success,
+// error red for failure, dim gray otherwise. Shared by verbose Tool Cards and
+// Collapsed Entries so the palette can never drift between the two.
+func toolStatusStyle(status string) lipgloss.Style {
+	switch status {
+	case "ok":
+		return okStyle
+	case "failed", "canceled":
+		return errorStyle
+	}
+	return toolStyle
+}
+
 func (m *Model) renderToolCard(card *toolCard, width int) string {
 	if card == nil {
 		return ""
 	}
-	symbol, style := "⚙", toolStyle
+	symbol, style := "⚙", toolStatusStyle(card.status)
 	switch card.status {
 	case "ok":
-		symbol, style = "✓", okStyle
+		symbol = "✓"
 	case "failed", "canceled":
-		symbol, style = "✗", errorStyle
+		symbol = "✗"
 	}
 
 	var lines []string
@@ -335,14 +348,11 @@ func collapsedEntry(card *toolCard, width int) string {
 	if card == nil {
 		return ""
 	}
-	symbol, style := "⏺", toolStyle
+	symbol, style := "⏺", toolStatusStyle(card.status)
 	outcome, outcomeStyle := card.status, dimStyle
 	switch card.status {
-	case "ok":
-		style = okStyle
-		outcome = "ok"
 	case "failed", "canceled":
-		symbol, style = "✗", errorStyle
+		symbol = "✗"
 		outcome, outcomeStyle = card.status, errorStyle
 	case "", "running":
 		outcome, outcomeStyle = "running…", dimStyle

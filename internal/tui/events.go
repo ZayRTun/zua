@@ -193,15 +193,15 @@ func (parser *eventParser) parse(kind string, data json.RawMessage) []tea.Msg {
 			return nil
 		}
 		info := parser.toolCalls[status.CallID]
-		cardStatus, errText, outText, exitCode := resolveCallStatus(status.Status.Error, status.Operations)
+		cs := resolveCallStatus(status.Status.Error, status.Operations)
 		return []tea.Msg{toolStatusMsg{
 			callID:   status.CallID,
 			name:     info.name,
 			argsRaw:  info.argsRaw,
-			status:   cardStatus,
-			errText:  errText,
-			outText:  outText,
-			exitCode: exitCode,
+			status:   cs.status,
+			errText:  cs.errText,
+			outText:  cs.outText,
+			exitCode: cs.exitCode,
 		}}
 	case kindError:
 		var errEvent wireError
@@ -212,14 +212,25 @@ func (parser *eventParser) parse(kind string, data json.RawMessage) []tea.Msg {
 	return nil
 }
 
+// callStatus is the UI-facing fold of a harness tool-call status: everything
+// a Tool Card displays. The fields always travel together into toolStatusMsg
+// and toolCard, so they move as one struct.
+type callStatus struct {
+	status   string // "running" | "ok" | "failed" | "canceled"
+	errText  string
+	outText  string
+	exitCode int
+}
+
 // resolveCallStatus folds a harness tool-call status into the UI-facing card
 // fields: (status, errText, outText, exitCode). It is the single source of
 // truth shared by the live event parser and session replay, so both paths
 // agree on statuses and captured output.
-func resolveCallStatus(statusError string, ops []wireOp) (status, errText, outText string, exitCode int) {
+func resolveCallStatus(statusError string, ops []wireOp) callStatus {
 	if statusError != "" {
-		return "failed", statusError, "", 0
+		return callStatus{status: "failed", errText: statusError}
 	}
+	var resolved callStatus
 	last := ""
 	for _, operation := range ops {
 		last = operation.Status
@@ -235,23 +246,23 @@ func resolveCallStatus(statusError string, ops []wireOp) (status, errText, outTe
 			if len(output) > 4000 {
 				output = output[:4000]
 			}
-			outText = output
+			resolved.outText = output
 			if result.ExitCode != nil && *result.ExitCode != 0 {
-				exitCode = *result.ExitCode
+				resolved.exitCode = *result.ExitCode
 			}
 		}
 	}
 	switch last {
 	case "completed":
-		status = "ok"
+		resolved.status = "ok"
 	case "failed":
-		status = "failed"
+		resolved.status = "failed"
 	case "canceled":
-		status = "canceled"
+		resolved.status = "canceled"
 	default:
-		status = "running"
+		resolved.status = "running"
 	}
-	return status, "", outText, exitCode
+	return resolved
 }
 
 func humanCount(value int64) string {

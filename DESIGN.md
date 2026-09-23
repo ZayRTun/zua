@@ -105,7 +105,10 @@ chrome degrades to plain text under NO_COLOR / no-color terminals.
 
 **Transcript**: tool cards collapse to one-line Collapsed Entries by default
 (⏺ Bash($ cmd) ⎿ ok · Read: path+lines · Write: path+bytes · Edit: path
-+added/-removed, computed at render time from decoded args). ctrl+o toggles
++added/-removed, computed at render time from decoded args). Known limit:
+Read's collapsed line count appears only when the call recorded a `limit`
+arg — full-file Reads show the path only, since counts come from decoded
+args alone (no file I/O in the UI). ctrl+o toggles
 Verbose Transcript in place — dual rendering per block, keyed with the
 per-block cache; fresh cards render collapsed while collapsed. User prompts
 and assistant messages never collapse.
