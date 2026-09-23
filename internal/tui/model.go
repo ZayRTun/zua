@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/reflow/truncate"
 )
 
 // blockKind is one transcript entry.
@@ -94,9 +95,10 @@ func New(workspace, provider, model string, fileTools bool, skillDirs []string) 
 	}
 	ta := textarea.New()
 	ta.Placeholder = "Describe a task… (/help for commands, Esc to abort/quit, Ctrl+C to quit)"
-	ta.Prompt = "❯ "
+	ta.Prompt = "> "
 	ta.CharLimit = 32_000
-	ta.SetWidth(80)
+	// 78 = 80-wide terminal minus the two border columns of the Prompt Box.
+	ta.SetWidth(78)
 	ta.SetHeight(1)
 	ta.Focus()
 	ta.ShowLineNumbers = false
@@ -156,8 +158,8 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.viewport.Width = msg.Width
-		m.viewport.Height = msg.Height - 6
-		m.textarea.SetWidth(msg.Width)
+		m.textarea.SetWidth(max(msg.Width-2, 1)) // -2: Prompt Box border columns
+		m.setViewportHeight()
 		m.refresh()
 	case spinner.TickMsg:
 		if m.running || m.loading {
@@ -213,7 +215,8 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if handled, extra := m.handlePaletteKeys(msg); handled {
 			cmds = append(cmds, extra...)
-			break // fall through to the common exit path (re-arms listener)
+			m.setViewportHeight() // palette visibility changed the bottom section
+			break                 // fall through to the common exit path (re-arms listener)
 		}
 		if msg.Type != tea.KeyUp && msg.Type != tea.KeyDown && msg.Type != tea.KeyTab {
 			// typing/backspace changed the input → reset palette selection
@@ -241,7 +244,11 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case tea.KeyEnter:
 			if strings.Contains(msg.String(), "alt+enter") || strings.Contains(msg.String(), "shift+enter") {
-				m.textarea, _ = m.textarea.Update(msg)
+				// The textarea's InsertNewline binding only matches bare
+				// "enter", so a modified enter arrives here unmatched and
+				// would be swallowed — insert the newline at the cursor
+				// explicitly.
+				m.textarea.InsertString("\n")
 				m.resizeEditor()
 			} else if !m.running {
 				input := strings.TrimSpace(m.textarea.Value())
@@ -293,6 +300,7 @@ func isScrollKey(message tea.Msg) bool {
 func (m *Model) resizeEditor() {
 	lines := strings.Count(m.textarea.Value(), "\n") + 1
 	m.textarea.SetHeight(min(max(lines, 1), 8))
+	m.setViewportHeight()
 }
 
 func (m *Model) appendBlock(b block) {
@@ -587,7 +595,44 @@ func (m *Model) handlePaletteKeys(msg tea.KeyMsg) (bool, []tea.Cmd) {
 	return false, nil
 }
 
+// setViewportHeight sizes the transcript viewport to whatever the bottom
+// section (status, palette, Prompt Box, hint line) actually needs. Nothing
+// here may assume a fixed total height: the Command Menu anchors above the
+// box and grows it, so the height is always derived from the parts.
+func (m *Model) setViewportHeight() {
+	m.viewport.Height = max(m.height-2-m.bottomHeight(), 1) // -2: header + its divider
+}
+
+// bottomHeight reports the rendered height of everything below the viewport.
+// It renders the same parts View() shows, so the two can never drift apart.
+func (m Model) bottomHeight() int {
+	return lipgloss.Height(lipgloss.JoinVertical(lipgloss.Left, m.bottomParts()...))
+}
+
+// bottomParts renders everything below the transcript viewport, top to
+// bottom: divider, status, palette (when visible), Prompt Box, hint line.
+// This one list defines both the layout and its height (bottomHeight), so
+// the Command Menu can later anchor above the box with no hardcoded total.
+func (m Model) bottomParts() []string {
+	parts := []string{strings.Repeat("─", max(m.width, 1)), m.statusLine()}
+	if m.paletteVisible() {
+		parts = append(parts, m.viewPalette())
+	}
+	parts = append(parts, m.renderPromptBox())
+	if m.hintsVisible() {
+		parts = append(parts, m.renderHints())
+	}
+	return parts
+}
+
+// hintsVisible reports whether the contextual hint line under the Prompt Box
+// should render — it hides while a Turn runs so the status area stays clean.
+func (m Model) hintsVisible() bool {
+	return !m.running
+}
+
 func (m *Model) refresh() {
+	m.setViewportHeight()
 	// Auto-follow: only snap to the bottom when the user is already reading
 	// the tail. If they scrolled up, leave their position alone; it re-engages
 	// automatically once they page back to the bottom.
@@ -652,29 +697,61 @@ func (m Model) View() string {
 	}
 	header := titleStyle.Render("unreal-agent") +
 		dimStyle.Render("  "+m.workspace+" · "+modelLabel+" · "+sessionLabel)
-	status := ""
-	if m.loading {
-		status = statusStyle.Render(m.spinner.View() + " loading sessions…")
-	} else if m.running {
-		status = statusStyle.Render(m.spinner.View() + " working…")
-	} else {
-		status = dimStyle.Render("idle")
-		if m.sessionIn > 0 || m.sessionOut > 0 {
-			status += dimStyle.Render("  last turn: " + humanCount(m.turnUsage[0]) + " in / " + humanCount(m.turnUsage[1]) + " out")
-			status += dimStyle.Render("  ·  session: " + humanCount(m.sessionIn) + " in / " + humanCount(m.sessionOut) + " out")
-		}
-	}
-	bottom := []string{strings.Repeat("─", max(m.width, 1)), status}
-	if m.paletteVisible() {
-		bottom = append(bottom, m.viewPalette())
-	}
-	bottom = append(bottom, m.textarea.View())
 	return lipgloss.JoinVertical(lipgloss.Left,
 		header,
 		strings.Repeat("─", max(m.width, 1)),
 		m.viewport.View(),
-		lipgloss.JoinVertical(lipgloss.Left, bottom...),
+		lipgloss.JoinVertical(lipgloss.Left, m.bottomParts()...),
 	)
+}
+
+// statusLine renders the working/idle state and token usage.
+func (m Model) statusLine() string {
+	if m.loading {
+		return statusStyle.Render(m.spinner.View() + " loading sessions…")
+	}
+	if m.running {
+		return statusStyle.Render(m.spinner.View() + " working…")
+	}
+	status := dimStyle.Render("idle")
+	if m.sessionIn > 0 || m.sessionOut > 0 {
+		status += dimStyle.Render("  last turn: " + humanCount(m.turnUsage[0]) + " in / " + humanCount(m.turnUsage[1]) + " out")
+		status += dimStyle.Render("  ·  session: " + humanCount(m.sessionIn) + " in / " + humanCount(m.sessionOut) + " out")
+	}
+	return status
+}
+
+// ---- Prompt Box ----
+
+const (
+	dimBorder   = lipgloss.Color("8")  // unfocused border
+	focusBorder = lipgloss.Color("12") // focused border (accent)
+)
+
+// promptBorderStyleFor is the rounded Prompt Box border: dim while
+// unfocused, brightening to the accent color on focus.
+func promptBorderStyleFor(focused bool) lipgloss.Style {
+	border := dimBorder
+	if focused {
+		border = focusBorder
+	}
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(border)
+}
+
+// renderPromptBox draws the rounded Prompt Box around the textarea.
+func (m Model) renderPromptBox() string {
+	return promptBorderStyleFor(m.textarea.Focused()).Render(m.textarea.View())
+}
+
+// hintText is the contextual hint line under the Prompt Box.
+const hintText = "shift+enter newline · ctrl+o verbose · /help commands"
+
+// renderHints renders the dim hint line below the box, clipped to the
+// terminal width so narrow sizes never wrap or overflow.
+func (m Model) renderHints() string {
+	return truncate.String(dimStyle.Render(hintText), uint(max(m.width, 1)))
 }
 
 // viewPalette renders the pi-style command palette above the input:
