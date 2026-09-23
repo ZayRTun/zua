@@ -1,11 +1,15 @@
 package tui
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	"unreal-agent-tui/internal/skills"
 )
 
 // typeKeys drives text through the real Update path, one KeyMsg per rune
@@ -253,5 +257,155 @@ func TestMenuRespectsWidthAndCappedHeight(t *testing.T) {
 		if w := lipgloss.Width(strings.TrimRight(stripANSI(line), " ")); w > 40 {
 			t.Fatalf("menu line %d wide exceeds terminal width 40: %q", w, stripANSI(line))
 		}
+	}
+}
+
+// pressKey drives a single non-rune key through the real Update path.
+func pressKey(t *testing.T, m Model, key tea.KeyType) Model {
+	t.Helper()
+	current, _ := tea.Model(m).Update(tea.KeyMsg{Type: key})
+	return current.(Model)
+}
+
+// seedSkills runs real skill discovery over deterministic temp dirs (no
+// pollution from the developer's real ~/.agents/skills) and assigns the
+// result, mirroring what New does with its own scan.
+func seedSkills(t *testing.T, m Model, workspace string, extras ...string) Model {
+	t.Helper()
+	entries := skills.Discover(append(skills.DefaultDirs(workspace, ""), extras...))
+	m.skills = entries
+	m.refresh()
+	return m
+}
+
+// writeSkill writes a SKILL.md with the given frontmatter fields and body
+// into dir.
+func writeSkill(t *testing.T, dir, frontmatter, body string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	skill := "---\n" + frontmatter + "---\n\n" + body + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(skill), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestSkillMenuListsUserInvokedOnly checks the /skill: prefix lists
+// user-invoked skills with their frontmatter descriptions — and that model
+// tools never surface as /skill: entries (issue #5).
+func TestSkillMenuListsUserInvokedOnly(t *testing.T) {
+	dir := t.TempDir()
+	// Model-invocable skill in the workspace (no disable-model-invocation).
+	writeSkill(t, filepath.Join(dir, ".harness", "skills", "lint-check"),
+		"name: lint-check\ndescription: verify deploys\n", "Run deploy checks.")
+	// User-invoked skill in an extra directory.
+	extra := t.TempDir()
+	writeSkill(t, filepath.Join(extra, "journal"),
+		"name: journal\ndescription: keep a journal\ndisable-model-invocation: true\n", "Write a journal entry.")
+
+	m := seedSkills(t, resize(t, 100, 30), dir, extra)
+	m = typeKeys(t, m, "/skill:")
+	view := stripANSI(m.View())
+
+	if !strings.Contains(view, "/skill:journal") {
+		t.Fatalf("menu missing user-invoked /skill:journal:\n%s", view)
+	}
+	if !strings.Contains(view, "keep a journal") {
+		t.Fatalf("menu missing journal description:\n%s", view)
+	}
+	if strings.Contains(view, "/skill:lint-check") {
+		t.Fatalf("model tool surfaced as /skill: entry:\n%s", view)
+	}
+}
+
+// TestSkillMenuFilterCaseInsensitive checks prefix filtering past the
+// /skill: prefix, case-insensitively (issue #5).
+func TestSkillMenuFilterCaseInsensitive(t *testing.T) {
+	dir := t.TempDir()
+	extra := t.TempDir()
+	writeSkill(t, filepath.Join(extra, "journal"),
+		"name: journal\ndescription: keep a journal\ndisable-model-invocation: true\n", "Body.")
+	writeSkill(t, filepath.Join(extra, "spin-check"),
+		"name: spin-check\ndescription: spin check\ndisable-model-invocation: true\n", "Body.")
+
+	m := seedSkills(t, resize(t, 100, 30), dir, extra)
+	m = typeKeys(t, m, "/SKILL:JOU")
+	view := stripANSI(m.View())
+	if !strings.Contains(view, "/skill:journal") || strings.Contains(view, "/skill:spin-check") {
+		t.Fatalf("case-insensitive /skill: filter failed:\n%s", view)
+	}
+}
+
+// TestSkillMenuAcceptFillsToken checks enter accepts a skill entry into the
+// input without sending, filling the /skill:name token with a trailing space
+// so arguments can follow (issue #5).
+func TestSkillMenuAcceptFillsToken(t *testing.T) {
+	dir := t.TempDir()
+	extra := t.TempDir()
+	writeSkill(t, filepath.Join(extra, "journal"),
+		"name: journal\ndescription: keep a journal\ndisable-model-invocation: true\n", "Body.")
+
+	m := seedSkills(t, resize(t, 100, 30), dir, extra)
+	m = typeKeys(t, m, "/skill:jou")
+	current, _ := tea.Model(m).Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = current.(Model)
+
+	// Rendered Prompt Box carries the accepted token; textarea.Value() pins
+	// the exact trailing space + cursor-at-end that makes room for arguments.
+	if !strings.Contains(stripANSI(m.View()), "/skill:journal") {
+		t.Fatalf("Prompt Box missing accepted /skill:journal:\n%s", stripANSI(m.View()))
+	}
+	if got := m.textarea.Value(); got != "/skill:journal " {
+		t.Fatalf("accept produced %q, want \"/skill:journal \"", got)
+	}
+	if m.running {
+		t.Fatal("enter with the menu open must not send")
+	}
+	if strings.Contains(stripANSI(m.View()), "↑/↓ select") {
+		t.Fatalf("menu must close after accepting:\n%s", stripANSI(m.View()))
+	}
+}
+
+// TestSkillMenuUpDownTabRouting checks the locked key routing over skill
+// entries: ↓ moves the selection, tab completes the highlighted skill.
+func TestSkillMenuUpDownTabRouting(t *testing.T) {
+	dir := t.TempDir()
+	extra := t.TempDir()
+	writeSkill(t, filepath.Join(extra, "journal"),
+		"name: journal\ndescription: keep a journal\ndisable-model-invocation: true\n", "Body.")
+	writeSkill(t, filepath.Join(extra, "spin-check"),
+		"name: spin-check\ndescription: spin check\ndisable-model-invocation: true\n", "Body.")
+
+	m := seedSkills(t, resize(t, 100, 30), dir, extra)
+	m = typeKeys(t, m, "/skill:")
+	m = pressKey(t, m, tea.KeyDown) // select spin-check
+	view := stripANSI(m.View())
+	if !strings.Contains(view, "▸ /skill:spin-check") {
+		t.Fatalf("↓ did not move selection to spin-check:\n%s", view)
+	}
+	m = pressKey(t, m, tea.KeyTab)
+	if got := m.textarea.Value(); got != "/skill:spin-check " {
+		t.Fatalf("tab produced %q, want \"/skill:spin-check \"", got)
+	}
+	if strings.Contains(stripANSI(m.View()), "↑/↓ select") {
+		t.Fatalf("menu must close after completing:\n%s", stripANSI(m.View()))
+	}
+}
+
+// TestSkillMenuClosedWithoutSkills checks that with no discovered skills,
+// /skill: opens nothing and input behaves as before (issue #5).
+func TestSkillMenuClosedWithoutSkills(t *testing.T) {
+	m := resize(t, 100, 30)
+	m.skills = nil
+	m.refresh()
+	m = typeKeys(t, m, "/skill:")
+	if strings.Contains(stripANSI(m.View()), "↑/↓ select") {
+		t.Fatalf("menu must stay closed with no skills:\n%s", stripANSI(m.View()))
+	}
+	// Input still works as before.
+	m = typeKeys(t, m, "hello")
+	if !strings.Contains(stripANSI(m.View()), "hello") {
+		t.Fatalf("input broke with no skills:\n%s", stripANSI(m.View()))
 	}
 }

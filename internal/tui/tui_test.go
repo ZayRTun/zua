@@ -204,14 +204,8 @@ func TestToolCardArgsFlow(t *testing.T) {
 
 func TestReloadDiscovery(t *testing.T) {
 	dir := t.TempDir()
-	skillDir := filepath.Join(dir, ".harness", "skills", "deploy-check")
-	if err := os.MkdirAll(skillDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	skill := "---\nname: deploy-check\ndescription: verify deploys\n---\n\nRun deploy checks.\n"
-	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(skill), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeSkill(t, filepath.Join(dir, ".harness", "skills", "deploy-check"),
+		"name: deploy-check\ndescription: verify deploys\n", "Run deploy checks.")
 	entries := skills.Discover(skills.DefaultDirs(dir, ""))
 	if len(entries) != 1 || entries[0].Name != "deploy-check" || entries[0].UserOnly {
 		t.Fatalf("skill discovery mismatch: %+v", entries)
@@ -237,21 +231,11 @@ func TestCommandMenuAndUserSkills(t *testing.T) {
 	dir := t.TempDir()
 	// One model-invocable skill in the workspace, one user-only skill in an
 	// extra directory.
-	wsSkill := filepath.Join(dir, ".harness", "skills", "deploy-check")
-	if err := os.MkdirAll(wsSkill, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(wsSkill, "SKILL.md"), []byte("---\nname: deploy-check\ndescription: verify deploys\n---\n\nRun deploy checks.\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeSkill(t, filepath.Join(dir, ".harness", "skills", "deploy-check"),
+		"name: deploy-check\ndescription: verify deploys\n", "Run deploy checks.")
 	extra := t.TempDir()
-	onlySkill := filepath.Join(extra, "journal")
-	if err := os.MkdirAll(onlySkill, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(onlySkill, "SKILL.md"), []byte("---\nname: journal\ndescription: keep a journal\ndisable-model-invocation: true\n---\n\nWrite a journal entry.\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeSkill(t, filepath.Join(extra, "journal"),
+		"name: journal\ndescription: keep a journal\ndisable-model-invocation: true\n", "Write a journal entry.")
 
 	entries := skills.Discover(append(skills.DefaultDirs(dir, ""), extra))
 	if len(entries) != 2 {
@@ -277,22 +261,29 @@ func TestCommandMenuAndUserSkills(t *testing.T) {
 		present[name] = true
 	}
 	// The default scan includes the user's real ~/.agents/skills, so assert
-	// that our two skills are present rather than exact equality.
-	for _, required := range []string{"/help", "/new", "/resume", "/model [id]", "/skills", "/reload", "/quit", "/skill:deploy-check", "/skill:journal"} {
+	// that our user-invoked skill is present rather than exact equality. The
+	// model tool deploy-check must NOT surface as a /skill: entry (issue #5).
+	for _, required := range []string{"/help", "/new", "/resume", "/model [id]", "/skills", "/reload", "/quit", "/skill:journal"} {
 		if !present[required] {
 			t.Fatalf("menu missing %q; got %v", required, names)
 		}
 	}
+	if present["/skill:deploy-check"] {
+		t.Fatalf("model tool surfaced as /skill: entry; got %v", names)
+	}
 
-	// Filter to skills only.
+	// Filter to skills only: journal present, model tool excluded.
 	m.textarea.SetValue("/skill:")
 	matches = m.menuMatches()
 	matchedNames := map[string]bool{}
 	for _, item := range matches {
 		matchedNames[item.display] = true
 	}
-	if !matchedNames["/skill:deploy-check"] || !matchedNames["/skill:journal"] {
-		t.Fatalf("expected both skills in filtered matches, got %v", matchedNames)
+	if !matchedNames["/skill:journal"] {
+		t.Fatalf("expected journal in filtered matches, got %v", matchedNames)
+	}
+	if matchedNames["/skill:deploy-check"] {
+		t.Fatalf("model tool in /skill: matches, got %v", matchedNames)
 	}
 }
 

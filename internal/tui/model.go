@@ -526,18 +526,19 @@ var commandTable = []commandEntry{
 // menu row shows (insert omits the argument placeholder).
 type menuItem struct{ insert, display, desc string }
 
-// menuItems lists the command table plus one /skill:name entry per skill.
+// menuItems lists the command table plus one /skill:name entry per
+// user-invoked skill (model tools are not user-invocable, so they never
+// surface here — issue #5).
 func (m *Model) menuItems() []menuItem {
 	items := make([]menuItem, 0, len(commandTable)+len(m.skills))
 	for _, cmd := range commandTable {
 		items = append(items, menuItem{insert: cmd.name, display: cmd.display(), desc: cmd.desc})
 	}
 	for _, entry := range m.skills {
-		kind := "model tool"
-		if entry.UserOnly {
-			kind = "user-invoked — zero tokens until used"
+		if !entry.UserOnly {
+			continue
 		}
-		desc := "skill · " + kind
+		desc := "skill · user-invoked — zero tokens until used"
 		if entry.Description != "" {
 			desc += " — " + entry.Description
 		}
