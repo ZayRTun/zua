@@ -21,20 +21,12 @@ One entry in the transcript: user prompt, assistant message, reasoning summary, 
 _Avoid_: item, entry, message (reserved for what the model said)
 
 **Tool Card**:
-The transcript rendering of one tool call — its name, arguments, and outcome.
-_Avoid_: tool call display, action
-
-**Collapsed Entry**:
-The single-line form of a tool card (⏺ name(args) ⎿ outcome) shown when the transcript is not verbose.
-_Avoid_: summary line, folded card
+The transcript rendering of one tool call — a `●` status dot, the tool name, its arguments, and its outcome lines hanging off `└` branches.
+_Avoid_: tool call display, action, collapsed entry
 
 **Verbose Transcript**:
-The transcript expanded to show every tool card in full; toggled with ctrl+o.
+The transcript expanded to show every tool card's full output; toggled with ctrl+o.
 _Avoid_: debug view, full mode
-
-**Command Menu**:
-The autocomplete popup above the prompt box, listing slash commands and user-invoked skills matching the typed prefix; enter accepts, it does not send.
-_Avoid_: autocomplete dropdown, suggestion list
 
 **Tool Call**:
 An invocation the model requested, identified by its call_id; distinct from its card.
@@ -42,13 +34,21 @@ _Avoid_: (always distinguish from Tool Card)
 
 ### Interface
 
-**Prompt Box**:
-The bordered input area at the bottom where the user types prompts and slash commands.
-_Avoid_: editor (an implementation detail), input field
+**Header**:
+The launcher's top block: logo, app name, workspace path, and a stats line (model · thinking level · skills count).
+_Avoid_: title bar, banner
 
-**Status Line**:
-The line above the prompt box showing working/idle state and token usage.
-_Avoid_: footer, status bar
+**Composer**:
+The input area at the bottom where the user types prompts and slash commands — a `❯` prompt between a rule above and a rule below, no border, no placeholder.
+_Avoid_: prompt box, editor (an implementation detail), input field, bordered box
+
+**Usage Line**:
+The single line below the Composer: `↑in ↓out R… W… CH…% $… context%/window (auto) - model • thinking level`, computed from the model catalog.
+_Avoid_: status line, footer, hint line
+
+**Command Menu**:
+The autocomplete popup above the Composer, listing slash commands and user-invoked skills matching the typed prefix; enter accepts, it does not send.
+_Avoid_: autocomplete dropdown, suggestion list
 
 **Session**:
 A persisted, resumable conversation stored under `<workspace>/.harness/sessions`.
@@ -56,10 +56,10 @@ _Avoid_: chat, conversation history
 
 ### Configuration
 
-**Pristine Mode**:
-Default tool configuration matching the upstream benchmark: Bash + ViewImage (+ SkillUse).
-_Avoid_: minimal mode
+**OpenCode Go**:
+The model gateway this app runs against by default — OpenAI chat-completions compatible, requires a per-session `x-opencode-session` header.
+_Avoid_: opencode zen, go plan
 
-**File-Tools Mode**:
-Pristine plus the Read/Write/Edit tools, opted into via `-file-tools`.
-_Avoid_: full mode
+**Settings File**:
+The global `~/.zua/settings.json` holding provider, API key, base URL, model, and thinking level; flags and env vars override it.
+_Avoid_: config file, preferences
