@@ -95,6 +95,14 @@ frontmatter). Case-insensitive prefix filter. ↑/↓ select (not scroll), tab
 completes, esc dismisses (before quit), **enter accepts into the input —
 does not send**; a second enter sends. CC-identical.
 
+**Chrome palette**: header, Tool Cards, and Status Line use a dim-gray
++ single-accent palette (accent 12); assistant markdown keeps glamour
+auto-style. Status Line always shows the active tool mode (pristine /
+file-tools) and the current model id next to working/idle + usage — the
+cost-critical mode setting stays visible. While a Turn runs the spinner
+shows a randomized gerund verb (chosen per turn, rendered dim). All
+chrome degrades to plain text under NO_COLOR / no-color terminals.
+
 **Transcript**: tool cards collapse to one-line Collapsed Entries by default
 (⏺ Bash($ cmd) ⎿ ok · Read: path+lines · Write: path+bytes · Edit: path
 +added/-removed, computed at render time from decoded args). ctrl+o toggles

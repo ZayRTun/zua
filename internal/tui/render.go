@@ -105,7 +105,7 @@ func (m *Model) renderToolCard(card *toolCard, width int) string {
 	symbol, style := "⚙", toolStyle
 	switch card.status {
 	case "ok":
-		symbol, style = "✓", lipgloss.NewStyle()
+		symbol, style = "✓", okStyle
 	case "failed", "canceled":
 		symbol, style = "✗", errorStyle
 	}
@@ -339,6 +339,7 @@ func collapsedEntry(card *toolCard, width int) string {
 	outcome, outcomeStyle := card.status, dimStyle
 	switch card.status {
 	case "ok":
+		style = okStyle
 		outcome = "ok"
 	case "failed", "canceled":
 		symbol, style = "✗", errorStyle

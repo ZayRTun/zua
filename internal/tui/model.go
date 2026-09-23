@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 
@@ -56,6 +57,7 @@ type Model struct {
 	provider  string
 	model     string
 	fileTools bool
+	turnVerb  string // spinner verb chosen for the running Turn
 
 	viewport   viewport.Model
 	textarea   textarea.Model
@@ -486,6 +488,7 @@ func (m *Model) invokeSkillCommand(input, token string) []tea.Cmd {
 func (m *Model) beginTurn(display, prompt string) []tea.Cmd {
 	m.appendBlock(block{kind: blockUser, text: display})
 	m.running = true
+	m.turnVerb = pickVerb()
 	m.events = make(chan tea.Msg, 256)
 	m.refresh()
 	m.startTurn(prompt)
@@ -740,27 +743,67 @@ func (m Model) View() string {
 	header := titleStyle.Render("unreal-agent") +
 		dimStyle.Render("  "+m.workspace+" · "+modelLabel+" · "+sessionLabel)
 	return lipgloss.JoinVertical(lipgloss.Left,
-		header,
+		m.truncateToWidth(header),
 		strings.Repeat("─", max(m.width, 1)),
 		m.viewport.View(),
 		lipgloss.JoinVertical(lipgloss.Left, m.bottomParts()...),
 	)
 }
 
-// statusLine renders the working/idle state and token usage.
+// toolMode names the active tool mode (glossary: Pristine Mode / File-Tools
+// Mode) for the Status Line and reload report.
+func (m Model) toolMode() string {
+	if m.fileTools {
+		return "file-tools"
+	}
+	return "pristine"
+}
+
+// truncateToWidth clips a chrome line to the terminal width so narrow
+// terminals never overflow.
+func (m Model) truncateToWidth(s string) string {
+	return truncate.String(s, uint(max(m.width, 1)))
+}
+
+// statusLine renders the working/idle state, the active tool mode, the
+// current model id, and per-turn/session token usage. The whole line is
+// truncated to the terminal width so narrow terminals never overflow.
 func (m Model) statusLine() string {
+	var status string
 	if m.loading {
-		return statusStyle.Render(m.spinner.View() + " loading sessions…")
+		status = statusStyle.Render(m.spinner.View() + " loading sessions…")
+	} else if m.running {
+		status = statusStyle.Render(m.spinner.View()) + " " +
+			dimStyle.Render(orDefault(m.turnVerb, "working…"))
+	} else {
+		status = dimStyle.Render("idle")
 	}
-	if m.running {
-		return statusStyle.Render(m.spinner.View() + " working…")
-	}
-	status := dimStyle.Render("idle")
+	status += dimStyle.Render("  ·  " + m.toolMode() + "  ·  " + orDefault(m.model, "(default model)"))
 	if m.sessionIn > 0 || m.sessionOut > 0 {
-		status += dimStyle.Render("  last turn: " + humanCount(m.turnUsage[0]) + " in / " + humanCount(m.turnUsage[1]) + " out")
+		status += dimStyle.Render("  ·  last turn: " + humanCount(m.turnUsage[0]) + " in / " + humanCount(m.turnUsage[1]) + " out")
 		status += dimStyle.Render("  ·  session: " + humanCount(m.sessionIn) + " in / " + humanCount(m.sessionOut) + " out")
 	}
-	return status
+	return m.truncateToWidth(status)
+}
+
+// spinnerVerbs are the randomized gerund verbs shown dim next to the spinner
+// while a Turn runs — one is chosen per turn by pickVerb.
+var spinnerVerbs = []string{
+	"Polishing tarnished generics…",
+	"Reticulating splines…",
+	"Untangling call stacks…",
+	"Sharpening rubber ducks…",
+	"Herding semicolons…",
+	"Aligning stack frames…",
+	"Dusting off the cache…",
+	"Consulting the rubber duck…",
+	"Compiling courage…",
+	"Persuading the linker…",
+}
+
+// pickVerb chooses the spinner verb for one Turn.
+func pickVerb() string {
+	return spinnerVerbs[rand.IntN(len(spinnerVerbs))]
 }
 
 // ---- Prompt Box ----
@@ -832,7 +875,8 @@ var (
 	toolStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 	dimStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Italic(true)
 	errorStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
-	statusStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
+	okStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("12")) // ok tool glyphs
+	statusStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("12")) // spinner/menu/picker accent — deliberately the same accent as okStyle; split only intentionally
 	diffAddStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
 	diffDelStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
 )
