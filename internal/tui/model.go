@@ -211,6 +211,12 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.appendBlock(block{kind: blockError, text: "agent exited: " + msg.err.Error()})
 		}
 		m.refresh()
+	case csiSequenceMsg:
+		// Disambiguated keys bubbletea v1 can't parse; only the modified
+		// enters matter (shift+enter newline, alt+enter fallback).
+		if isModifiedEnter(msg) {
+			m.insertNewline()
+		}
 	case tea.KeyMsg:
 		if m.picking {
 			return m.updatePicker(msg)
@@ -245,12 +251,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case tea.KeyEnter:
 			if strings.Contains(msg.String(), "alt+enter") || strings.Contains(msg.String(), "shift+enter") {
-				// The textarea's InsertNewline binding only matches bare
-				// "enter", so a modified enter arrives here unmatched and
-				// would be swallowed — insert the newline at the cursor
-				// explicitly.
-				m.textarea.InsertString("\n")
-				m.resizeEditor()
+				m.insertNewline()
 			} else if !m.running {
 				input := strings.TrimSpace(m.textarea.Value())
 				if input != "" {
@@ -754,6 +755,15 @@ func (m Model) View() string {
 		m.viewport.View(),
 		lipgloss.JoinVertical(lipgloss.Left, m.bottomParts()...),
 	)
+}
+
+// insertNewline adds a newline at the cursor and re-flows the Prompt Box.
+// The textarea's InsertNewline binding only matches bare "enter", so a
+// modified enter (shift/alt, raw or CSI-encoded) arrives unmatched and would
+// be swallowed — insert the newline explicitly.
+func (m *Model) insertNewline() {
+	m.textarea.InsertString("\n")
+	m.resizeEditor()
 }
 
 // toolMode names the active tool mode (glossary: Pristine Mode / File-Tools

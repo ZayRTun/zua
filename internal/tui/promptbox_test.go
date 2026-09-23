@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -111,6 +112,55 @@ func TestEnterSendsAndAltEnterNewlines(t *testing.T) {
 	}
 	if m.textarea.Height() != 2 {
 		t.Fatalf("editor height %d, want 2 after newline", m.textarea.Height())
+	}
+}
+
+// Disambiguated enter sequences (kitty CSI u / xterm modifyOtherKeys) insert
+// a newline — this is what shift+enter actually sends from terminals that
+// distinguish it from Enter. Unrelated unknown CSI sequences stay inert.
+func TestDisambiguatedEnterSequencesInsertNewline(t *testing.T) {
+	for _, seq := range []string{
+		"\x1b[13;2u",    // CSI u: shift+enter
+		"\x1b[13;3u",    // CSI u: alt+enter (kitty encodes the modifier)
+		"\x1b[27;2;13~", // xterm modifyOtherKeys: shift+enter
+		"\x1b[27;3;13~", // xterm modifyOtherKeys: alt+enter
+	} {
+		m := resize(t, 100, 30)
+		m.textarea.SetValue("line one")
+		current, _ := tea.Model(m).Update(csiSequenceMsg(seq))
+		m = current.(Model)
+		if m.running {
+			t.Fatalf("%q must not send the prompt", seq)
+		}
+		if got := m.textarea.Value(); !strings.Contains(got, "\n") {
+			t.Fatalf("%q did not insert a newline: %q", seq, got)
+		}
+	}
+
+	// Unrelated unknown CSI sequences must do nothing.
+	m := resize(t, 100, 30)
+	m.textarea.SetValue("line one")
+	current, _ := tea.Model(m).Update(csiSequenceMsg("\x1b[1;5C"))
+	m = current.(Model)
+	if m.running {
+		t.Fatal("unrelated CSI sequence sent the prompt")
+	}
+	if got := m.textarea.Value(); strings.Contains(got, "\n") {
+		t.Fatalf("unrelated CSI sequence inserted a newline: %q", got)
+	}
+}
+
+// CSIFilter passes normal messages through untouched — only bubbletea's
+// unexported unknown CSI report gets converted.
+func TestCSIFilterPassthrough(t *testing.T) {
+	for _, msg := range []tea.Msg{
+		tea.KeyMsg{Type: tea.KeyEnter},
+		tea.WindowSizeMsg{Width: 80, Height: 24},
+		csiSequenceMsg("\x1b[13;2u"), // already converted — must not re-wrap
+	} {
+		if got := CSIFilter(nil, msg); !reflect.DeepEqual(got, msg) {
+			t.Fatalf("CSIFilter altered %T", msg)
+		}
 	}
 }
 

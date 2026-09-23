@@ -87,7 +87,10 @@ surface, not the render model.
 **Prompt box**: rounded-corner bordered box, dim border brightening on focus,
 `> ` prompt inside, contextual dim hint line below
 (`shift+enter newline · ctrl+o verbose · /help commands`; hidden while a turn
-runs). Keys unchanged: Enter sends, shift/alt+enter newline.
+runs). Keys unchanged: Enter sends, shift/alt+enter newline (works both
+as raw esc+return and as disambiguated CSI-u / modifyOtherKeys
+sequences, which bubbletea v1 drops — surfaced via a tea.WithFilter
+CSI translator).
 
 **Command Menu**: popup above the box when input starts with `/`; static
 commands plus dynamic `/skill:name` entries (user-invoked skills from

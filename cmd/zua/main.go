@@ -37,6 +37,7 @@ func main() {
 	program := tea.NewProgram(
 		tui.New(*workspace, *provider, *model, *fileTools, extras),
 		tea.WithAltScreen(),
+		tea.WithFilter(tui.CSIFilter),
 	)
 	if _, err := program.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
