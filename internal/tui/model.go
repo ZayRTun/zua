@@ -781,6 +781,12 @@ func (m Model) truncateToWidth(s string) string {
 	return truncate.String(s, uint(max(m.width, 1)))
 }
 
+// truncateToWidthTail clips a chrome line to the terminal width, marking
+// the cut with an ellipsis so long rows never end mid-word.
+func (m Model) truncateToWidthTail(s string) string {
+	return truncate.StringWithTail(s, uint(max(m.width, 1)), "...")
+}
+
 // ---- Header ----
 
 // logoArt is zua's pixel-mascot: an original blocky critter drawn from
@@ -887,9 +893,10 @@ func (m *Model) viewMenu() string {
 		}
 	}
 	footer := fmt.Sprintf("(%d/%d)  ↑/↓ select · Tab complete · Enter accept · Esc dismiss", selected+1, len(matches))
-	out = append(out, dimStyle.Render(footer))
+	// A blank line keeps the footer visually apart from the rows.
+	out = append(out, "", dimStyle.Render(footer))
 	for index := range out {
-		out[index] = m.truncateToWidth(out[index])
+		out[index] = m.truncateToWidthTail(out[index])
 	}
 	return strings.Join(out, "\n")
 }

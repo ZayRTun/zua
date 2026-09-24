@@ -249,8 +249,8 @@ func TestMenuRespectsWidthAndCappedHeight(t *testing.T) {
 	if len(menuLines) == 0 {
 		t.Fatalf("menu not found in view:\n%s", stripANSI(view))
 	}
-	if len(menuLines) > 9 { // 8 rows + footer
-		t.Fatalf("menu height %d exceeds the 8-row cap + footer", len(menuLines))
+	if len(menuLines) > 10 { // 8 rows + blank separator + footer
+		t.Fatalf("menu height %d exceeds the 8-row cap + separator + footer", len(menuLines))
 	}
 	for _, line := range menuLines {
 		// JoinVertical pads to the widest line; measure actual content.
@@ -407,5 +407,44 @@ func TestSkillMenuClosedWithoutSkills(t *testing.T) {
 	m = typeKeys(t, m, "hello")
 	if !strings.Contains(stripANSI(m.View()), "hello") {
 		t.Fatalf("input broke with no skills:\n%s", stripANSI(m.View()))
+	}
+}
+
+// TestMenuEllipsisAndFooterGap pins the Command Menu polish: rows longer
+// than the terminal end with an ellipsis instead of a hard mid-sentence
+// clip, and a blank line separates the rows from the keys footer.
+func TestMenuEllipsisAndFooterGap(t *testing.T) {
+	m := typeKeys(t, resize(t, 100, 30), "/")
+	plain := stripANSI(m.View())
+	lines := strings.Split(plain, "\n")
+	menuStart, footerIdx := -1, -1
+	for index, line := range lines {
+		if menuStart == -1 && strings.Contains(line, "start a fresh session") {
+			menuStart = index
+		}
+		if strings.HasPrefix(line, "(1/") {
+			footerIdx = index
+		}
+	}
+	if menuStart == -1 || footerIdx == -1 {
+		t.Fatalf("menu rows or footer missing:\n%s", plain)
+	}
+	if footerIdx < 1 || strings.TrimRight(lines[footerIdx-1], " ") != "" {
+		t.Fatalf("footer must sit one blank line below the rows:\n%s", plain)
+	}
+	// Any menu row whose actual content spans the full terminal width was
+	// truncated — it must end with the ellipsis, never a hard cut.
+	// (JoinVertical pads rows to the widest line, so measure trimmed.)
+	for _, line := range lines[menuStart:footerIdx] {
+		trimmed := strings.TrimRight(line, " ")
+		if len([]rune(trimmed)) == 100 && !strings.HasSuffix(trimmed, "...") {
+			t.Fatalf("full-width menu row must end with an ellipsis:\n%q", line)
+		}
+	}
+	// The truncation helper: clipped output ends with the tail and respects
+	// the width.
+	clipped := m.truncateToWidthTail(strings.Repeat("x", 150))
+	if len([]rune(clipped)) != 100 || !strings.HasSuffix(clipped, "...") {
+		t.Fatalf("truncateToWidthTail wrong: width %d, tail %q", len([]rune(clipped)), clipped[len(clipped)-6:])
 	}
 }
