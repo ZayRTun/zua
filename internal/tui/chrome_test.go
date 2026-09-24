@@ -7,6 +7,7 @@ package tui
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -41,7 +42,7 @@ func TestFreshSessionShowsHeaderBlock(t *testing.T) {
 		t.Fatal("launch must not open the picker")
 	}
 	view := stripANSI(m.View())
-	for _, want := range []string{"zua", workspace, "GLM-5.3-Flash · high"} {
+	for _, want := range []string{"Unreal Agent", filepath.Base(workspace), "GLM-5.3-Flash · high"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("fresh session missing header content %q:\n%s", want, view)
 		}
@@ -62,7 +63,7 @@ func TestNewCommandShowsFreshHeader(t *testing.T) {
 	current, _ := tea.Model(m).Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = current.(Model)
 	view := stripANSI(m.View())
-	for _, want := range []string{"zua", "skills"} {
+	for _, want := range []string{"Unreal Agent", "skills"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("/new transcript missing %q:\n%s", want, view)
 		}
@@ -201,7 +202,7 @@ func TestHeaderPlainUnderNoColor(t *testing.T) {
 		t.Fatalf("launcher emitted ANSI escapes under a no-color profile:\n%q", view)
 	}
 	plain := stripANSI(view)
-	for _, want := range []string{"zua", "skills", "Resume Session"} {
+	for _, want := range []string{"Unreal Agent", "skills", "Resume Session"} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("plain launcher missing %q:\n%s", want, plain)
 		}
@@ -274,7 +275,7 @@ func TestLauncherShowsHeader(t *testing.T) {
 	}
 	view := stripANSI(m.View())
 	stats := "GLM-5.3-Flash · high · " + itoa(int64(len(m.skills))) + " skills"
-	for _, want := range []string{"zua", workspace, stats, "old work", "❯"} {
+	for _, want := range []string{"Unreal Agent", filepath.Base(workspace), stats, "old work", "❯"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("launcher missing %q:\n%s", want, view)
 		}
@@ -300,7 +301,7 @@ func TestLauncherKeepsComposerGrounded(t *testing.T) {
 			lipgloss.Height(view), stripANSI(view))
 	}
 	plain := stripANSI(view)
-	for _, want := range []string{"Resume Session", "newer session", "zua"} {
+	for _, want := range []string{"Resume Session", "newer session", "Unreal Agent"} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("launcher missing %q:\n%s", want, plain)
 		}
@@ -590,5 +591,62 @@ func TestNewCommandLooksLikeFreshBoot(t *testing.T) {
 	}
 	if got := m.View(); got != boot {
 		t.Fatalf("/new must look exactly like a fresh boot, got:\n%s", stripANSI(got))
+	}
+}
+
+// TestHeaderMascotIsThreeLines pins the mascot at Claude Code's header
+// proportions: exactly three terminal rows, at most 13 cells wide, drawn
+// from solid blocks with the background showing through for the eyes
+// and smile.
+func TestHeaderMascotIsThreeLines(t *testing.T) {
+	lines := strings.Split(logoArt, "\n")
+	if len(lines) != 3 {
+		t.Fatalf("mascot must be exactly three lines, got %d:\n%s", len(lines), logoArt)
+	}
+	for index, line := range lines {
+		if width := lipgloss.Width(line); width > 13 {
+			t.Fatalf("mascot line %d is %d cells wide, must be at most 13:\n%q", index+1, width, line)
+		}
+	}
+	// The eyes and smile are the terminal background showing through a
+	// solid head: the middle row carries two eye gaps, the bottom row
+	// the smile gap.
+	if !strings.Contains(lines[1], "█ █") {
+		t.Fatalf("mascot middle row must show eye gaps:\n%q", lines[1])
+	}
+	if !strings.Contains(lines[2], "   ") {
+		t.Fatalf("mascot bottom row must show the smile gap:\n%q", lines[2])
+	}
+	// And the header really renders it next to the product name.
+	m := sizeModel(t, New(t.TempDir(), settings.Settings{}, nil), 100, 30)
+	view := stripANSI(m.View())
+	for _, want := range []string{"████ ███ ████", "Unreal Agent"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("header missing %q:\n%s", want, view)
+		}
+	}
+}
+
+// TestHeaderShowsProductNameAndWorkspaceLabel pins the header text:
+// "Unreal Agent" on the first line, the workspace directory's basename
+// with its git branch on the second — not the full absolute path.
+func TestHeaderShowsProductNameAndWorkspaceLabel(t *testing.T) {
+	workspace := t.TempDir()
+	cmd := exec.Command("git", "-C", workspace, "init", "-b", "trunk")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, out)
+	}
+	m := sizeModel(t, New(workspace, settings.Settings{}, nil), 100, 30)
+	view := stripANSI(m.View())
+	for _, want := range []string{
+		"Unreal Agent",
+		filepath.Base(workspace) + " (trunk)",
+	} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("header missing %q:\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, workspace) {
+		t.Fatalf("header must not show the absolute workspace path:\n%s", view)
 	}
 }

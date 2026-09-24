@@ -353,3 +353,15 @@ flips to amber past 70% and red past 90% (Warning/Error roles), and the
 loading-sessions spinner keeps the accent. Segment tokens stay
 space-separated per the user's mockup — the design system's `·`
 separators were considered and left out.
+
+## Header: three-line mascot + product name (Claude Code proportions)
+
+The Header is the Claude Code launcher header: a mascot exactly three
+terminal rows (~13 cells wide — a 2:1-cell circle) sitting flush against
+three text rows. The mascot is Unreal Agent's smiley — solid accent
+head, eyes and smile as background holes — replacing the eight-line
+block critter. Text: "Unreal Agent" (accent), workspace basename with
+git branch — never the absolute path — and the model · level · skills
+stats line. The same basename + branch label (workspaceLabel) is shared
+with the Usage Line's identity row. gitBranch uses symbolic-ref so
+unborn branches (fresh git init) report their branch.

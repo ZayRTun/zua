@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -39,10 +38,7 @@ func (m Model) usageLine() string {
 // Muted chrome — the footer is a caption, not content (design system:
 // status bar in Muted; token counts and timestamps are Muted + dim).
 func (m Model) usageIdentity() string {
-	identity := filepath.Base(m.workspace)
-	if m.branch != "" {
-		identity += " (" + m.branch + ")"
-	}
+	identity := m.workspaceLabel()
 	if m.sessionName == "" {
 		return m.truncateToWidth(dimStyle.Render(identity))
 	}

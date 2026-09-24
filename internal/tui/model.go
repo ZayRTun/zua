@@ -355,12 +355,14 @@ func (m *Model) resetToHeader() {
 // gitBranch returns the workspace's current git branch, "" when the
 // workspace is not a repository (or git is unavailable).
 func gitBranch(workspace string) string {
-	out, err := exec.Command("git", "-C", workspace, "rev-parse", "--abbrev-ref", "HEAD").Output()
+	// symbolic-ref works on unborn branches too (fresh git init), where
+	// rev-parse HEAD fails.
+	out, err := exec.Command("git", "-C", workspace, "symbolic-ref", "--short", "HEAD").Output()
 	if err != nil {
 		return ""
 	}
 	branch := strings.TrimSpace(string(out))
-	if branch == "HEAD" { // detached HEAD is not a name
+	if branch == "HEAD" || branch == "" { // detached HEAD is not a name
 		return ""
 	}
 	return branch
@@ -900,16 +902,24 @@ func (m Model) truncateToWidthTail(s string) string {
 
 // ---- Header ----
 
-// logoArt is zua's pixel-mascot: an original blocky critter drawn from
-// solid █ cells. The eye and leg gaps are the terminal's own background
-// showing through, the same trick the reference launcher's mascot uses.
-const logoArt = `████████████
-██  ████  ██
-████████████
-  ██████████
-  ██████████
-  ██    ██
- ████  ████`
+// logoArt is zua's mascot, drawn from Unreal Agent's smiley: a solid
+// accent head three terminal rows tall — Claude Code's header proportions —
+// with the eyes and smile as the terminal's own background showing
+// through the solid face.
+const logoArt = `   ███████
+████ ███ ████
+  ███   ███`
+
+// workspaceLabel is the workspace's display name: the directory's
+// basename with the git branch in parentheses when there is one — the
+// same label the Usage Line's identity row shows.
+func (m Model) workspaceLabel() string {
+	label := filepath.Base(m.workspace)
+	if m.branch != "" {
+		label += " (" + m.branch + ")"
+	}
+	return label
+}
 
 // headerStats is the launcher's live stats line: model · thinking level ·
 // skills count. It reads current state on every render, so /reload's
@@ -928,8 +938,8 @@ func (m Model) headerStats() string {
 func (m Model) renderHeader() string {
 	logo := titleStyle.Render(logoArt)
 	right := lipgloss.JoinVertical(lipgloss.Left,
-		titleStyle.Render("zua"),
-		dimStyle.Render(m.workspace),
+		titleStyle.Render("Unreal Agent"),
+		dimStyle.Render(m.workspaceLabel()),
 		dimStyle.Render(m.headerStats()),
 	)
 	header := lipgloss.JoinHorizontal(lipgloss.Top, logo, "  ", right)
