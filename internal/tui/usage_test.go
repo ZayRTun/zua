@@ -1,8 +1,11 @@
 package tui
 
 import (
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -151,9 +154,10 @@ func TestUsageLineNoAutoUntilVerified(t *testing.T) {
 	}
 }
 
-// TestUsageLineSpinnerVerbWhileRunning pins that a running Turn prefixes the
-// Usage Line with the spinner and its randomized gerund verb.
-func TestUsageLineSpinnerVerbWhileRunning(t *testing.T) {
+// TestUsageLineHasNoSpinnerWhileRunning pins that the Usage Line stays a
+// meter: a running Turn must NOT prefix it with the spinner and verb —
+// that row lives in the transcript, where the agent response will appear.
+func TestUsageLineHasNoSpinnerWhileRunning(t *testing.T) {
 	m := sizeModel(t, New(t.TempDir(), settings.Settings{Model: "glm-5.3-flash"}, nil), 100, 30)
 	m.textarea.SetValue("do the thing")
 	current, _ := tea.Model(m).Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -162,19 +166,64 @@ func TestUsageLineSpinnerVerbWhileRunning(t *testing.T) {
 	if !m.running {
 		t.Fatal("turn must still be running")
 	}
-	view := stripANSI(m.View())
-	verb := ""
+	lines := strings.Split(stripANSI(m.View()), "\n")
+	usage := lines[len(lines)-1]
 	for _, candidate := range spinnerVerbs {
-		if strings.Contains(view, candidate) {
-			verb = candidate
-			break
+		if strings.Contains(usage, candidate) {
+			t.Fatalf("usage line must not carry the spinner verb:\n%s", usage)
 		}
 	}
-	if verb == "" {
-		t.Fatalf("usage line lacks the spinner verb while running:\n%s", view)
+	if !strings.Contains(usage, "↑500k") {
+		t.Fatalf("usage segments missing:\n%s", usage)
 	}
-	if !strings.Contains(view, "↑500k") {
-		t.Fatalf("usage segments missing next to the verb:\n%s", view)
+}
+
+// TestTurnStatusRowInTranscript pins the running Turn's status row in the
+// chat section where the agent response will appear — the Claude Code
+// thinking row: spinner frame + gerund verb, with the elapsed time.
+func TestTurnStatusRowInTranscript(t *testing.T) {
+	m := sizeModel(t, New(t.TempDir(), settings.Settings{Model: "glm-5.3-flash"}, nil), 100, 30)
+	m.textarea.SetValue("do the thing")
+	current, _ := tea.Model(m).Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = current.(Model)
+	var row string
+	for _, line := range strings.Split(stripANSI(m.View()), "\\n") {
+		for _, candidate := range spinnerVerbs {
+			if strings.Contains(line, candidate) {
+				row = line
+			}
+		}
+	}
+	if row == "" {
+		t.Fatalf("no turn status row in the transcript:\n%s", stripANSI(m.View()))
+	}
+	if !regexp.MustCompile(`\(\d+s\)`).MatchString(row) {
+		t.Fatalf("status row must carry the elapsed seconds:\n%s", row)
+	}
+}
+
+// TestTurnStatusRowElapsed pins the elapsed counter: the status row counts
+// the Turn's seconds.
+func TestTurnStatusRowElapsed(t *testing.T) {
+	m := resize(t, 100, 30)
+	m.running = true
+	m.turnVerb = "Compiling courage…"
+	m.turnStarted = time.Now().Add(-65 * time.Second)
+	m.refresh()
+	if plain := stripANSI(m.View()); !strings.Contains(plain, "Compiling courage… (65s)") {
+		t.Fatalf("elapsed seconds missing:\n%s", plain)
+	}
+}
+
+// TestSpinnerMatchesClaude pins the Claude Code thinking spinner: the
+// reverse-mirror cycle of · ✢ ✳ ✶ ✻ ✽ at 120ms per frame.
+func TestSpinnerMatchesClaude(t *testing.T) {
+	want := []string{"·", "✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳", "✢"}
+	if !slices.Equal(claudeSpinner.Frames, want) {
+		t.Fatalf("spinner frames = %q, want the Claude Code cycle %q", claudeSpinner.Frames, want)
+	}
+	if claudeSpinner.FPS != 120*time.Millisecond {
+		t.Fatalf("spinner FPS = %s, want 120ms per frame", claudeSpinner.FPS)
 	}
 }
 

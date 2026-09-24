@@ -18,10 +18,10 @@ const autoCompactionVerified = false
 
 // usageLine renders the Usage Line below the Composer (glossary: Usage
 // Line): session-spanning token totals, latest-turn cache hit, catalog
-// cost, context percentage, and the `- model • thinking level` tail. While
-// a Turn runs, the line is prefixed with the spinner and its randomized
-// gerund verb. Segments depending on catalog data are omitted for
-// catalog-missing models — never invented.
+// cost, context percentage, and the `- model • thinking level` tail. It is
+// a meter, not a status area — the running Turn's spinner and gerund verb
+// render in the transcript instead. Segments depending on catalog data are
+// omitted for catalog-missing models — never invented.
 func (m Model) usageLine() string {
 	var segments []string
 	if m.sessionIn > 0 || m.sessionOut > 0 {
@@ -71,10 +71,7 @@ func (m Model) usageLine() string {
 	}
 	line += "- " + orDefault(m.cfg.Model, "(default model)") +
 		" • " + orDefault(m.cfg.ThinkingLevel, "high")
-	if m.running {
-		line = statusStyle.Render(m.spinner.View()) + " " +
-			dimStyle.Render(orDefault(m.turnVerb, "working…")) + " " + line
-	} else if m.loading {
+	if m.loading {
 		line = statusStyle.Render(m.spinner.View()+" loading sessions…") + " " + line
 	}
 	return m.truncateToWidth(line)

@@ -327,3 +327,17 @@ tokens until used" boilerplate after "/skill:name" (the prefix already
 says it is a skill, user-invoked is why it is listed, and usage cost is
 documented behavior, not per-row noise). Same rule everywhere chrome
 meets content: strip a label before adding a second one.
+
+## Turn status row lives in the transcript, not the Usage Line
+
+The Usage Line is a meter — session tokens, cache hit, cost, context %,
+model. While a Turn runs it is not prefixed with a spinner + gerund
+verb; that thinking row renders live at the end of the transcript,
+where the agent response will appear (the Claude Code placement):
+spinner frame + randomized verb in the accent, elapsed seconds dim —
+"✳ Compiling courage… (39s)". The spinner is the Claude Code thinking
+spinner (· ✢ ✳ ✶ ✻ ✽ cycling forward then reversing, 120ms per frame;
+vendored design system in docs/claude-code/DESIGN.md). The elapsed
+counter re-renders on every spinner tick. Only the elapsed time is
+honest mid-turn — token counts arrive with the response, so nothing
+else is shown until it lands.

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/glamour"
@@ -15,13 +16,29 @@ import (
 
 func (m *Model) renderTranscript() string {
 	width := max(m.viewport.Width-1, 20)
-	parts := make([]string, 0, len(m.blocks))
+	parts := make([]string, 0, len(m.blocks)+1)
 	for index := range m.blocks {
 		if line := m.renderBlock(&m.blocks[index], width); line != "" {
 			parts = append(parts, line)
 		}
 	}
+	// The running Turn's status row renders live at the end of the
+	// transcript — where the agent response will appear — never in the
+	// Usage Line.
+	if m.running {
+		parts = append(parts, m.turnStatusRow())
+	}
 	return strings.Join(parts, "\n\n")
+}
+
+// turnStatusRow renders the running Turn's status line: spinner frame +
+// gerund verb in the accent, elapsed seconds dim — the Claude Code
+// thinking row (docs/claude-code/DESIGN.md §5).
+func (m Model) turnStatusRow() string {
+	elapsed := int(time.Since(m.turnStarted).Seconds())
+	return statusStyle.Render(m.spinner.View()) + " " +
+		statusStyle.Render(orDefault(m.turnVerb, "working…")) + " " +
+		dimStyle.Render(fmt.Sprintf("(%ds)", elapsed))
 }
 
 func (m *Model) renderBlock(b *block, width int) string {

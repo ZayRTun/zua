@@ -4,6 +4,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"time"
 
 	"fmt"
 	"strings"
@@ -56,9 +57,10 @@ type block struct {
 }
 
 type Model struct {
-	workspace string
-	cfg       settings.Settings // resolved configuration (settings file precedence already applied)
-	turnVerb  string            // spinner verb chosen for the running Turn
+	workspace   string
+	cfg         settings.Settings // resolved configuration (settings file precedence already applied)
+	turnVerb    string            // spinner verb chosen for the running Turn
+	turnStarted time.Time         // when the running Turn began — drives the status row's elapsed seconds
 
 	viewport   viewport.Model
 	textarea   textarea.Model
@@ -127,7 +129,7 @@ func New(workspace string, cfg settings.Settings, skillDirs []string) Model {
 		skills:     discoverSkills(absolute, skillDirs),
 		textarea:   ta,
 		viewport:   viewport.New(80, 20),
-		spinner:    spinner.New(spinner.WithSpinner(spinner.MiniDot)),
+		spinner:    spinner.New(spinner.WithSpinner(claudeSpinner)),
 		toolBlocks: map[string]int{},
 	}
 	// A fresh session opens with the Header as the transcript's welcome
@@ -189,6 +191,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 			m.spinner, cmd = m.spinner.Update(msg)
 			cmds = append(cmds, cmd)
+			// The spinner now lives in the transcript's status row (inside
+			// the viewport), so each frame needs a re-render to animate.
+			m.refresh()
 		}
 	case metaMsg:
 		if m.sessionID == "" {
@@ -575,6 +580,7 @@ func (m *Model) beginTurn(display, prompt string) []tea.Cmd {
 	m.appendBlock(block{kind: blockUser, text: display})
 	m.running = true
 	m.turnVerb = pickVerb()
+	m.turnStarted = time.Now()
 	m.events = make(chan tea.Msg, 256)
 	m.refresh()
 	m.startTurn(prompt)
@@ -903,7 +909,14 @@ func (m Model) renderHeader() string {
 
 // ---- spinner verbs ----
 
-// spinnerVerbs are the randomized gerund verbs shown dim next to the spinner
+// claudeSpinner is the Claude Code thinking spinner: six symbols cycling
+// forward then reversing, 120ms per frame (docs/claude-code/DESIGN.md §8).
+var claudeSpinner = spinner.Spinner{
+	Frames: []string{"·", "✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳", "✢"},
+	FPS:    120 * time.Millisecond,
+}
+
+// spinnerVerbs are the randomized gerund verbs shown next to the spinner
 // while a Turn runs — one is chosen per turn by pickVerb.
 var spinnerVerbs = []string{
 	"Polishing tarnished generics…",
