@@ -325,6 +325,18 @@ func isScrollKey(message tea.Msg) bool {
 	return false
 }
 
+// resetToHeader clears the transcript to the fresh-boot state: the Header
+// welcome block alone, no session attached, viewport at the top. /new must
+// look pixel-identical to launching zua — not append a collapsed header
+// under the old transcript.
+func (m *Model) resetToHeader() {
+	m.sessionID = ""
+	m.toolBlocks = map[string]int{}
+	m.blocks = []block{{kind: blockHeader}}
+	m.viewport.GotoTop()
+	m.refresh()
+}
+
 func (m *Model) resizeEditor() {
 	lines := strings.Count(m.textarea.Value(), "\n") + 1
 	m.textarea.SetHeight(min(max(lines, 1), 8))
@@ -395,9 +407,7 @@ func (m *Model) command(input string) []tea.Cmd {
 		}
 		return []tea.Cmd{tea.Quit}
 	case "/new":
-		m.sessionID = ""
-		m.appendBlock(block{kind: blockDivider, text: "new session — next prompt starts fresh"})
-		m.appendBlock(block{kind: blockHeader})
+		m.resetToHeader()
 	case "/skills":
 		m.skills = discoverSkills(m.workspace, m.skillDirs)
 		if len(m.skills) == 0 {

@@ -54,22 +54,21 @@ func TestFreshSessionShowsHeaderBlock(t *testing.T) {
 }
 
 // TestNewCommandShowsFreshHeader pins that /new starts the fresh session
-// with the welcome Header block too.
+// with the welcome Header block too — a fresh boot, no divider.
 func TestNewCommandShowsFreshHeader(t *testing.T) {
-	// Tall terminal: the closing divider and the fresh Header must both be
-	// in view at once.
 	m := sizeModel(t, New(t.TempDir(), settings.Settings{}, nil), 100, 60)
 	m = typeKeys(t, m, "/new")
-	// First Enter accepts the Command Menu entry ("/new"), the second sends.
+	// Enter accepts the Command Menu entry ("/new") and executes it.
 	current, _ := tea.Model(m).Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = current.(Model)
-	current, _ = tea.Model(m).Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = current.(Model)
 	view := stripANSI(m.View())
-	for _, want := range []string{"zua", "new session"} {
+	for _, want := range []string{"zua", "skills"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("/new transcript missing %q:\n%s", want, view)
 		}
+	}
+	if strings.Contains(view, "new session — next prompt starts fresh") {
+		t.Fatal("/new is a fresh boot; it must not leave a divider")
 	}
 }
 
@@ -566,4 +565,30 @@ func TestPickerSelectedStyle(t *testing.T) {
 		}
 	}
 	t.Fatalf("selected row must accent only the title, datetime dim:\n%s", plain)
+}
+
+// TestNewCommandLooksLikeFreshBoot pins that /new replaces the transcript
+// wholesale: the resulting view is pixel-identical to launching zua —
+// Header at the top of a clean viewport, Composer grounded at the bottom —
+// instead of appending a collapsed Header under the old transcript.
+func TestNewCommandLooksLikeFreshBoot(t *testing.T) {
+	m := sizeModel(t, New(t.TempDir(), settings.Settings{Model: "glm-5.3-flash", ThinkingLevel: "high"}, nil), 160, 30)
+	boot := m.View()
+
+	// Simulate a used session: old transcript above, a live session id.
+	m.appendBlock(block{kind: blockUser, text: "earlier prompt"})
+	m.appendBlock(block{kind: blockAssistant, text: "earlier reply"})
+	m.sessionID = "0f9db70b"
+	m.refresh()
+
+	current, _ := tea.Model(m).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/new")})
+	current, _ = tea.Model(current.(Model)).Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = current.(Model)
+
+	if m.sessionID != "" {
+		t.Fatalf("/new must clear the session, got %q", m.sessionID)
+	}
+	if got := m.View(); got != boot {
+		t.Fatalf("/new must look exactly like a fresh boot, got:\n%s", stripANSI(got))
+	}
 }
