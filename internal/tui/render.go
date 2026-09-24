@@ -25,6 +25,11 @@ func (m *Model) renderTranscript() string {
 }
 
 func (m *Model) renderBlock(b *block, width int) string {
+	// The welcome Header renders live on every pass (its stats line must
+	// reflect /reload), so it bypasses the per-block cache.
+	if b.kind == blockHeader {
+		return m.renderHeader()
+	}
 	// Per-block cache: between events only one or two blocks change, so most
 	// renders are pure cache hits (keeps long sessions from re-wrapping
 	// everything on every tool status). The key includes the verbose flag so
@@ -46,10 +51,6 @@ func (m *Model) renderBlock(b *block, width int) string {
 		out = errorStyle.Render(wrap("✗ "+b.text, width))
 	case blockDivider:
 		out = dimStyle.Render("── " + b.text + " " + strings.Repeat("─", max(width-len(b.text)-4, 3)))
-	case blockHeader:
-		// The welcome Header renders live on every pass (its stats line must
-		// reflect /reload), so it bypasses the per-block cache.
-		out = m.renderHeader()
 	case blockTool:
 		// Tool cards are dual-rendered: one-line Collapsed Entry by default,
 		// full card in the Verbose Transcript (ctrl+O).
@@ -469,7 +470,12 @@ func wrap(text string, width int) string {
 
 // ---- session picker ----
 
+// viewPicker renders the launcher in the Command Menu's slot above the
+// Composer: a title row, a scrolling window of sessions capped at
+// maxPickerRows around the selection, and a (k/total) footer. Height is
+// capped and every row is clipped to the terminal width.
 func (m Model) viewPicker() string {
+	const maxPickerRows = 8
 	var out []string
 	out = append(out, titleStyle.Render("resume session")+
 		dimStyle.Render("  ↑/↓ select · Enter load · Esc cancel"))
@@ -477,7 +483,20 @@ func (m Model) viewPicker() string {
 	if len(m.sessions) == 0 {
 		out = append(out, dimStyle.Render("no saved sessions"))
 	}
-	for index, entry := range m.sessions {
+	// Scrolling window: keep the selection in view when the list outgrows
+	// the cap, like the Command Menu's viewport behavior.
+	start := 0
+	if len(m.sessions) > maxPickerRows {
+		start = m.pickIndex - maxPickerRows/2
+		if start < 0 {
+			start = 0
+		}
+		if maxStart := len(m.sessions) - maxPickerRows; start > maxStart {
+			start = maxStart
+		}
+	}
+	for index := start; index < len(m.sessions) && index < start+maxPickerRows; index++ {
+		entry := m.sessions[index]
 		line := "  " + entry.title + dimStyle.Render("  "+entry.updated)
 		if index == m.pickIndex {
 			out = append(out, statusStyle.Render("▸ "+line))
@@ -485,6 +504,9 @@ func (m Model) viewPicker() string {
 			out = append(out, line)
 		}
 	}
+	selected := clampIndex(m.pickIndex, len(m.sessions)) // rendering must not write state
+	footer := fmt.Sprintf("(%d/%d)  Enter load · Esc cancel", selected+1, len(m.sessions))
+	out = append(out, dimStyle.Render(footer))
 	for index := range out {
 		out[index] = m.truncateToWidth(out[index])
 	}

@@ -292,3 +292,28 @@ deliberately absent. `Init()` now issues the session load on startup: the
 launcher is the first screen (reference-launcher behavior), the Header
 above the picker; Esc dismisses to the transcript as before. Pinned by
 `TestStartupOpensLauncher` through the real Update → View seam.
+
+## Launch decision: fresh headered session (launch follow-up #2)
+
+Experiment superseded: zua booted into the launcher (picker consumes all
+keys), but starting a new session then needed an Esc — the user wants a
+fresh session at launch. The decision (amendment to the headerless-
+transcript rule, issue #12/story 4): boot straight into a fresh session
+whose transcript opens with the Header as a welcome block — visible at
+launch, scrolls away with the conversation, no permanently reserved
+chrome rows. /new does the same. Resumed sessions replace the blocks
+wholesale, so no header there. The launcher stays where it was: /resume
+opens it, Esc dismisses.
+
+## Launcher lives in the Command Menu slot (launch follow-up #3)
+
+The launcher used to swap the whole layout: header + unbounded session
+list + bottom block, top-aligned, so the Composer floated mid-screen
+with dead space below. Fixed: there is exactly one layout — transcript
+viewport + bottom block — and the picker opens as a bottom part in the
+slot directly above the Composer (the Command Menu's slot; at most one
+of the two is open). The picker is height-capped at maxPickerRows=8
+with a scrolling window around the selection and a (k/total) footer,
+like the menu. The welcome Header stays visible in the viewport behind
+the picker. The welcome Header block renders live on every pass
+(bypasses the per-block cache) so its stats line tracks /reload.

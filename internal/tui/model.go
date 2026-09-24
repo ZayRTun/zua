@@ -694,7 +694,11 @@ func (m Model) bottomHeight() int {
 // with no hardcoded total.
 func (m Model) bottomParts() []string {
 	var parts []string
-	if m.menuVisible() {
+	// The Command Menu and the launcher share the same anchor: the slot
+	// directly above the Composer. At most one is open at a time.
+	if m.picking {
+		parts = append(parts, m.viewPicker())
+	} else if m.menuVisible() {
 		parts = append(parts, m.viewMenu())
 	}
 	parts = append(parts, m.renderComposer())
@@ -755,15 +759,10 @@ func (m Model) View() string {
 		return "starting…"
 	}
 	bottom := lipgloss.JoinVertical(lipgloss.Left, m.bottomParts()...)
-	if m.picking {
-		return lipgloss.JoinVertical(lipgloss.Left,
-			m.renderHeader(),
-			m.viewPicker(),
-			bottom,
-		)
-	}
-	// Transcript view: no header, no divider — the conversation gets the
-	// full viewport (issue #12).
+	// One layout for both states: the transcript viewport fills the space
+	// above the bottom block, so the Composer stays grounded at the bottom
+	// of the terminal. The launcher and the Command Menu open as bottom
+	// parts above the Composer — chrome never moves.
 	return lipgloss.JoinVertical(lipgloss.Left, m.viewport.View(), bottom)
 }
 

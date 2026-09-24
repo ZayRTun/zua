@@ -11,7 +11,9 @@ import (
 	"strings"
 	"testing"
 
+	"fmt"
 	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/charmbracelet/lipgloss"
 	termenv "github.com/muesli/termenv"
 
@@ -276,6 +278,61 @@ func TestLauncherShowsHeader(t *testing.T) {
 		if !strings.Contains(view, want) {
 			t.Fatalf("launcher missing %q:\n%s", want, view)
 		}
+	}
+}
+
+// TestLauncherKeepsComposerGrounded pins the launcher layout rule: the
+// picker opens as a bottom part above the Composer (where the Command Menu
+// sits when you type '/'), the transcript stays visible above it, and the
+// view still fills the terminal — the Composer never floats up with dead
+// space below.
+func TestLauncherKeepsComposerGrounded(t *testing.T) {
+	workspace := t.TempDir()
+	m := sizeModel(t, New(workspace, settings.Settings{Model: "glm-5.3-flash"}, nil), 100, 40)
+	current, _ := tea.Model(m).Update(sessionsMsg{entries: []sessionEntry{
+		{title: "older session", updated: "1h ago"},
+		{title: "newer session", updated: "2m ago"},
+	}})
+	m = current.(Model)
+	view := m.View()
+	if lipgloss.Height(view) != 40 {
+		t.Fatalf("launcher view must fill the terminal (Composer grounded), got %d rows:\n%s",
+			lipgloss.Height(view), stripANSI(view))
+	}
+	plain := stripANSI(view)
+	for _, want := range []string{"resume session", "newer session", "zua"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("launcher missing %q:\n%s", want, plain)
+		}
+	}
+}
+
+// TestLauncherCapsPickerRows pins that the picker height is capped like the
+// Command Menu's: a scrolling window around the selection, never the whole
+// unbounded session list.
+func TestLauncherCapsPickerRows(t *testing.T) {
+	m := sizeModel(t, New(t.TempDir(), settings.Settings{}, nil), 100, 40)
+	var entries []sessionEntry
+	for i := 0; i < 20; i++ {
+		entries = append(entries, sessionEntry{title: fmt.Sprintf("session-%02d", i), updated: "1h ago"})
+	}
+	current, _ := tea.Model(m).Update(sessionsMsg{entries: entries})
+	m = current.(Model)
+	// ↓ three times: selection moves to the fourth row; the window starts
+	// at the top, so early rows stay visible and rows past the cap vanish.
+	for i := 0; i < 3; i++ {
+		current, _ = tea.Model(m).Update(tea.KeyMsg{Type: tea.KeyDown})
+		m = current.(Model)
+	}
+	plain := stripANSI(m.View())
+	if !strings.Contains(plain, "session-03") {
+		t.Fatalf("selected row must be visible:\n%s", plain)
+	}
+	if strings.Contains(plain, "session-08") {
+		t.Fatalf("picker rows must be capped — row 8 leaked:\n%s", plain)
+	}
+	if !strings.Contains(plain, "(4/20)") {
+		t.Fatalf("picker footer must report selection and total:\n%s", plain)
 	}
 }
 
