@@ -882,10 +882,20 @@ func (m *Model) viewMenu() string {
 	selected := clampIndex(m.menuIndex, len(matches)) // rendering must not write state
 	const maxMenuRows = 8
 	var out []string
-	for index, item := range matches {
-		if index >= maxMenuRows {
-			break
+	// Scrolling window: the 8 visible rows follow the selection when the
+	// match list outgrows the cap, like the session picker's window.
+	start := 0
+	if len(matches) > maxMenuRows {
+		start = selected - maxMenuRows/2
+		if start < 0 {
+			start = 0
 		}
+		if maxStart := len(matches) - maxMenuRows; start > maxStart {
+			start = maxStart
+		}
+	}
+	for index := start; index < len(matches) && index < start+maxMenuRows; index++ {
+		item := matches[index]
 		// The color highlight alone marks the selected row — no glyph — so
 		// every row aligns on the same two-space indent.
 		if index == selected {

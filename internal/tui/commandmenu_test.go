@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -495,5 +496,46 @@ func TestMenuHighlightsSelectedRow(t *testing.T) {
 	}
 	if dim == 0 {
 		t.Fatalf("the other menu rows must render dim:\n%s", stripANSI(m.View()))
+	}
+}
+
+// TestMenuScrollsWithSelection pins that the Command Menu scrolls its
+// 8-row window with the selection instead of hard-truncating from the top:
+// navigating past the cap scrolls the window, the selected row stays
+// visible, early rows scroll out, and the footer reports the position.
+func TestMenuScrollsWithSelection(t *testing.T) {
+	workspace := t.TempDir()
+	for i := 0; i < 12; i++ {
+		writeSkill(t, filepath.Join(workspace, ".harness", "skills", fmt.Sprintf("scroll-%02d", i)),
+			fmt.Sprintf("name: scroll-%02d\ndescription: scroll filler %02d\ndisable-model-invocation: true\n", i, i), "Body.")
+	}
+	m := seedSkills(t, resize(t, 100, 30), workspace)
+	m = typeKeys(t, m, "/")
+	// ↓ nine times: selection reaches the 10th of 19 entries, past the cap.
+	for i := 0; i < 9; i++ {
+		current, _ := tea.Model(m).Update(tea.KeyMsg{Type: tea.KeyDown})
+		m = current.(Model)
+	}
+	view := stripANSI(m.View())
+	if !strings.Contains(view, "(10/19)") {
+		t.Fatalf("footer must report position 10 of 19:\n%s", view)
+	}
+	if !strings.Contains(view, "/skill:scroll-02") {
+		t.Fatalf("the selected row must stay visible in the scrolled window:\n%s", view)
+	}
+	if strings.Contains(view, "start a fresh session") {
+		t.Fatalf("the first row must scroll out of the window:\n%s", view)
+	}
+	// ↑ walks back and the window follows: up three lands on entry 7,
+	// which is now at the top of the window.
+	for i := 0; i < 3; i++ {
+		current, _ := tea.Model(m).Update(tea.KeyMsg{Type: tea.KeyUp})
+		m = current.(Model)
+	}
+	if m.menuIndex != 6 {
+		t.Fatalf("↑ did not walk the selection back: menuIndex=%d", m.menuIndex)
+	}
+	if view := stripANSI(m.View()); !strings.Contains(view, "(7/19)") {
+		t.Fatalf("footer must report position 7 of 19:\n%s", view)
 	}
 }
