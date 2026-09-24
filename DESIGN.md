@@ -341,3 +341,15 @@ vendored design system in docs/claude-code/DESIGN.md). The elapsed
 counter re-renders on every spinner tick. Only the elapsed time is
 honest mid-turn — token counts arrive with the response, so nothing
 else is shown until it lands.
+
+## Footer is muted chrome (Claude Code design system, status bar)
+
+The Usage Line — identity row and meter row alike — renders in Muted
+(dim gray, color 8): the design system's status bar is muted and its
+caption tier is "Muted + dim — token counts, timestamps". The footer is
+a meter, not content; loudness there competes with the transcript.
+Color appears only where it carries signal: the context percentage
+flips to amber past 70% and red past 90% (Warning/Error roles), and the
+loading-sessions spinner keeps the accent. Segment tokens stay
+space-separated per the user's mockup — the design system's `·`
+separators were considered and left out.

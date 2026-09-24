@@ -11,6 +11,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 
 	"unreal-agent-tui/internal/catalog"
 	"unreal-agent-tui/internal/settings"
@@ -377,5 +378,40 @@ func TestUsageIdentityRow(t *testing.T) {
 	identity = strings.Split(stripANSI(m.View()), "\n")[len(strings.Split(stripANSI(m.View()), "\n"))-2]
 	if !strings.Contains(identity, "…") || lipgloss.Width(identity) > 100 {
 		t.Fatalf("overlong session name must truncate inside the width:\n%q", identity)
+	}
+}
+
+// TestUsageLineMutedChrome pins the footer's palette against the Claude
+// Code design system: the status bar is Muted (dim gray) — identity row,
+// meter segments, and model tail all render dim — while the context
+// percentage keeps its amber (warn) / red (error) color amid the muted
+// meter.
+func TestUsageLineMutedChrome(t *testing.T) {
+	prior := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.ANSI256)
+	defer lipgloss.SetColorProfile(prior)
+
+	m := sizeModel(t, New(t.TempDir(), settings.Settings{Model: "glm-5.3-flash"}, nil), 100, 30)
+	lines := strings.Split(m.View(), "\n")
+	identity, meter := lines[len(lines)-2], lines[len(lines)-1]
+	if !strings.Contains(identity, "\x1b[3;90m") {
+		t.Fatalf("identity row must render muted:\n%q", identity)
+	}
+	if !strings.Contains(meter, "\x1b[3;90m") {
+		t.Fatalf("meter segments must render muted:\n%q", meter)
+	}
+	// Context past 70%: amber pops through the muted meter.
+	current, _ := tea.Model(m).Update(usageMsg{in: 750_000, cached: 10_000})
+	m = current.(Model)
+	meter = strings.Split(m.View(), "\n")[len(strings.Split(m.View(), "\n"))-1]
+	if !strings.Contains(meter, "\x1b[33m") {
+		t.Fatalf("warn-level context must render amber:\n%q", meter)
+	}
+	// Past 90%: red.
+	current, _ = tea.Model(m).Update(usageMsg{in: 950_000, cached: 10_000})
+	m = current.(Model)
+	meter = strings.Split(m.View(), "\n")[len(strings.Split(m.View(), "\n"))-1]
+	if !strings.Contains(meter, "\x1b[91m") {
+		t.Fatalf("error-level context must render red:\n%q", meter)
 	}
 }

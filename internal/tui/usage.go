@@ -35,23 +35,23 @@ func (m Model) usageLine() string {
 }
 
 // usageIdentity renders the identity row: directory name, git branch, and
-// the session's name truncated so the row never overflows the width. With
-// no session name yet (fresh boot, no turns) only the directory and
-// branch show — no dangling bullet.
+// the session's name truncated so the row never overflows the width.
+// Muted chrome — the footer is a caption, not content (design system:
+// status bar in Muted; token counts and timestamps are Muted + dim).
 func (m Model) usageIdentity() string {
 	identity := filepath.Base(m.workspace)
 	if m.branch != "" {
 		identity += " (" + m.branch + ")"
 	}
 	if m.sessionName == "" {
-		return m.truncateToWidth(identity)
+		return m.truncateToWidth(dimStyle.Render(identity))
 	}
 	remaining := m.width - lipgloss.Width(identity) - lipgloss.Width(" • ")
 	if remaining < 4 { // no room for a title: drop it whole
-		return m.truncateToWidth(identity)
+		return m.truncateToWidth(dimStyle.Render(identity))
 	}
 	title := truncate.StringWithTail(m.sessionName, uint(remaining), "…")
-	return m.truncateToWidth(identity + " • " + title)
+	return m.truncateToWidth(dimStyle.Render(identity + " • " + title))
 }
 
 // usageMeter renders the meter row: token/cost/context segments on the
@@ -59,17 +59,19 @@ func (m Model) usageIdentity() string {
 // width.
 func (m Model) usageMeter() string {
 	var segments []string
-	segments = append(segments,
-		"↑"+formatTokens(m.sessionIn),
-		"↓"+formatTokens(m.sessionOut))
+	addDim := func(segment string) {
+		segments = append(segments, dimStyle.Render(segment))
+	}
+	addDim("↑" + formatTokens(m.sessionIn))
+	addDim("↓" + formatTokens(m.sessionOut))
 	if m.sessionCached > 0 {
-		segments = append(segments, "R"+formatTokens(m.sessionCached))
+		addDim("R" + formatTokens(m.sessionCached))
 	}
 	if m.sessionCacheWrite > 0 {
-		segments = append(segments, "W"+formatTokens(m.sessionCacheWrite))
+		addDim("W" + formatTokens(m.sessionCacheWrite))
 	}
 	if m.turnCached > 0 && m.turnIn > 0 {
-		segments = append(segments, fmt.Sprintf("CH%.1f%%", float64(m.turnCached)/float64(m.turnIn)*100))
+		addDim(fmt.Sprintf("CH%.1f%%", float64(m.turnCached)/float64(m.turnIn)*100))
 	}
 	entry, catalogKnown := catalog.Lookup(m.cfg.Model)
 	if catalogKnown {
@@ -79,17 +81,18 @@ func (m Model) usageMeter() string {
 			CacheWrite: m.sessionCacheWrite,
 			Output:     m.sessionOut,
 		})
-		segments = append(segments, formatCost(cost))
+		addDim(formatCost(cost))
 		if entry.ContextWindow > 0 {
 			pct, level := m.usageContext(entry, m.turnIn)
 			segment := fmt.Sprintf("%.1f%%/%s", pct, formatTokens(entry.ContextWindow))
 			switch level {
-			case "error":
-				segment = errorStyle.Render(segment)
+			case "error": // the context percentage keeps its color amid the muted meter
+				segments = append(segments, errorStyle.Render(segment))
 			case "warn":
-				segment = warnStyle.Render(segment)
+				segments = append(segments, warnStyle.Render(segment))
+			default:
+				addDim(segment)
 			}
-			segments = append(segments, segment)
 		}
 	}
 	// The (auto) segment is independent of the catalog: a catalog-missing
@@ -103,6 +106,7 @@ func (m Model) usageMeter() string {
 	}
 	tail := "- " + orDefault(m.cfg.Model, "(default model)") +
 		" • " + orDefault(m.cfg.ThinkingLevel, "high")
+	tail = dimStyle.Render(tail)
 	pad := m.width - lipgloss.Width(left) - lipgloss.Width(tail)
 	if pad >= 2 { // one space minimum between meter and tail, tail flush right
 		return left + strings.Repeat(" ", pad) + tail
