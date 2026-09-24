@@ -573,3 +573,26 @@ func TestSkillMenuEnterRuns(t *testing.T) {
 		t.Fatal("enter on a skill row did not start the turn")
 	}
 }
+
+// TestMenuMatchesSkillNameWithoutPrefix pins that a skill is reachable
+// without typing the "/skill:" prefix: "/ask-m" matches /skill:ask-matt and
+// tab completes the canonical token.
+func TestMenuMatchesSkillNameWithoutPrefix(t *testing.T) {
+	dir := t.TempDir()
+	extra := t.TempDir()
+	writeSkill(t, filepath.Join(extra, "ask-matt"),
+		"name: ask-matt\ndescription: router over the skills in this repo\ndisable-model-invocation: true\n", "Body.")
+
+	m := seedSkills(t, resize(t, 100, 30), dir, extra)
+	m = typeKeys(t, m, "/ask-m")
+	view := stripANSI(m.View())
+	if strings.Contains(view, "↑/↓ select") && !strings.Contains(view, "/skill:ask-matt") {
+		t.Fatalf("/ask-m must match /skill:ask-matt:\n%s", view)
+	}
+	// Tab completes to the canonical token with room for arguments.
+	current, _ := tea.Model(m).Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = current.(Model)
+	if got := m.textarea.Value(); got != "/skill:ask-matt " {
+		t.Fatalf("tab completed %q, want \"/skill:ask-matt \"", got)
+	}
+}

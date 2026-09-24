@@ -577,6 +577,9 @@ func (m *Model) menuItems() []menuItem {
 // menuMatches returns items whose name starts with the typed command token,
 // case-insensitively. The token is the first word of the input ("/RE" →
 // /resume); once the user types arguments the menu closes (menuVisible).
+// Skill rows also match on their bare name — "/ask-m" reaches
+// /skill:ask-matt without typing the "/skill:" prefix — while completion
+// still inserts the canonical token.
 func (m *Model) menuMatches() []menuItem {
 	input := m.textarea.Value()
 	token := strings.TrimPrefix(input, "/")
@@ -584,9 +587,18 @@ func (m *Model) menuMatches() []menuItem {
 		token = token[:cut]
 	}
 	token = "/" + strings.ToLower(token)
+	// The bare-name token for skill rows: "/ask-m" (no "skill:" prefix).
+	bare := strings.TrimPrefix(token, "/")
 	var matches []menuItem
 	for _, item := range m.menuItems() {
-		if strings.HasPrefix(strings.ToLower(item.display), token) {
+		display := strings.ToLower(item.display)
+		if strings.HasPrefix(display, token) {
+			matches = append(matches, item)
+			continue
+		}
+		// "/ask-m" matches /skill:ask-matt: the token matches the name part
+		// after the fixed prefix.
+		if name := strings.TrimPrefix(display, "/skill:"); name != display && strings.HasPrefix(name, bare) {
 			matches = append(matches, item)
 		}
 	}
