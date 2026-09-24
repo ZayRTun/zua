@@ -65,7 +65,7 @@ func driveTurns(t *testing.T) Model {
 func TestUsageLineBelowComposerRendersSessionUsage(t *testing.T) {
 	m := driveTurns(t)
 	view := stripANSI(m.View())
-	for _, want := range []string{"↑1.1M ↓30k R650k W50k CH50.0% $0.095 60.0%/1.0M", "- glm-5.3-flash • high"} {
+	for _, want := range []string{"↑1.1M ↓30k R650k W50k CH50.0% $0.095 60.0%/1.0M", "glm-5.3-flash • high"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("usage line missing %q:\n%s", want, view)
 		}
@@ -73,7 +73,7 @@ func TestUsageLineBelowComposerRendersSessionUsage(t *testing.T) {
 	// The model tail sits flush right on the meter row.
 	lines := strings.Split(view, "\n")
 	meter := lines[len(lines)-1]
-	if !strings.HasSuffix(strings.TrimRight(meter, " "), "- glm-5.3-flash • high") {
+	if !strings.HasSuffix(strings.TrimRight(meter, " "), "glm-5.3-flash • high") {
 		t.Fatalf("meter tail must be right-aligned:\n%q", meter)
 	}
 	// Below the Composer: the ❯ prompt line must appear before the usage
@@ -127,7 +127,7 @@ func TestUsageLineCatalogMissingOmitsCatalogSegments(t *testing.T) {
 	if strings.Contains(view, "$") || strings.Contains(view, "%/") {
 		t.Fatalf("catalog-missing model must omit cost/context segments:\n%s", view)
 	}
-	if !strings.Contains(view, "↑50k ↓1.0k") || !strings.Contains(view, "- unknown-model • high") {
+	if !strings.Contains(view, "↑50k ↓1.0k") || !strings.Contains(view, "unknown-model • high") {
 		t.Fatalf("usage totals or model tail missing:\n%s", view)
 	}
 }
@@ -262,7 +262,7 @@ func TestUsageLineFreshSessionShowsZeroSegments(t *testing.T) {
 			t.Fatalf("fresh meter missing %q:\n%q", want, meter)
 		}
 	}
-	if !strings.HasSuffix(strings.TrimRight(meter, " "), "- glm-5.3-flash • high") {
+	if !strings.HasSuffix(strings.TrimRight(meter, " "), "glm-5.3-flash • high") {
 		t.Fatalf("fresh meter tail must be right-aligned:\n%q", meter)
 	}
 }
@@ -273,7 +273,7 @@ func TestUsageLineFreshSessionCatalogMissing(t *testing.T) {
 	m := sizeModel(t, New(t.TempDir(), settings.Settings{Model: "mystery-model"}, nil), 100, 30)
 	lines := strings.Split(stripANSI(m.View()), "\n")
 	meter := lines[len(lines)-1]
-	for _, want := range []string{"↑0 ↓0", "- mystery-model • high"} {
+	for _, want := range []string{"↑0 ↓0", "mystery-model • high"} {
 		if !strings.Contains(meter, want) {
 			t.Fatalf("fresh meter missing %q:\n%q", want, meter)
 		}

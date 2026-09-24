@@ -104,7 +104,7 @@ func (m Model) usageMeter() string {
 	if m.loading {
 		left = statusStyle.Render(m.spinner.View()+" loading sessions…") + " " + left
 	}
-	tail := "- " + orDefault(m.cfg.Model, "(default model)") +
+	tail := orDefault(m.cfg.Model, "(default model)") +
 		" • " + orDefault(m.cfg.ThinkingLevel, "high")
 	tail = dimStyle.Render(tail)
 	pad := m.width - lipgloss.Width(left) - lipgloss.Width(tail)
