@@ -476,42 +476,47 @@ func wrap(text string, width int) string {
 // capped and every row is clipped to the terminal width.
 func (m Model) viewPicker() string {
 	const maxPickerRows = 8
+	matches := m.pickMatches()
+	selected := clampIndex(m.pickIndex, len(matches)) // rendering must not write state
 	var out []string
 	// A blank line separates the picker from the transcript it floats over,
 	// the same framing the Command Menu gets.
 	out = append(out, "")
-	out = append(out, titleStyle.Render("resume session")+
-		dimStyle.Render("  ↑/↓ select · Enter load · Esc cancel"))
-	out = append(out, strings.Repeat("─", max(m.width, 1)))
-	if len(m.sessions) == 0 {
-		out = append(out, dimStyle.Render("no saved sessions"))
+	if len(matches) == 0 {
+		out = append(out, dimStyle.Render("  no matching sessions"))
 	}
-	// Scrolling window: keep the selection in view when the list outgrows
-	// the cap, like the Command Menu's viewport behavior.
+	// Scrolling window: keep the selection in view when the filtered list
+	// outgrows the cap, like the Command Menu's window.
 	start := 0
-	if len(m.sessions) > maxPickerRows {
-		start = m.pickIndex - maxPickerRows/2
+	if len(matches) > maxPickerRows {
+		start = selected - maxPickerRows/2
 		if start < 0 {
 			start = 0
 		}
-		if maxStart := len(m.sessions) - maxPickerRows; start > maxStart {
+		if maxStart := len(matches) - maxPickerRows; start > maxStart {
 			start = maxStart
 		}
 	}
-	for index := start; index < len(m.sessions) && index < start+maxPickerRows; index++ {
-		entry := m.sessions[index]
-		line := "  " + entry.title + dimStyle.Render("  "+entry.updated)
-		if index == m.pickIndex {
-			out = append(out, statusStyle.Render("▸ "+line))
+	for index := start; index < len(matches) && index < start+maxPickerRows; index++ {
+		entry := matches[index]
+		// Same chrome as the Command Menu: two-space indent, no selection
+		// glyph, the selected row's title accented with a dim datetime, and
+		// unselected rows fully dim.
+		if index == selected {
+			out = append(out, "  "+statusStyle.Render(entry.title)+dimStyle.Render("  "+entry.updated))
 		} else {
-			out = append(out, line)
+			out = append(out, dimStyle.Render("  "+entry.title+"  "+entry.updated))
 		}
 	}
-	selected := clampIndex(m.pickIndex, len(m.sessions)) // rendering must not write state
-	footer := fmt.Sprintf("(%d/%d)  Enter load · Esc cancel", selected+1, len(m.sessions))
-	out = append(out, dimStyle.Render(footer))
+	position := selected + 1
+	if len(matches) == 0 {
+		position = 0 // no rows: the position is 0, not 1
+	}
+	footer := fmt.Sprintf("Resume Session - (%d/%d)  ↑/↓ select · Enter load · Esc cancel", position, len(matches))
+	// Blank lines frame the rows; the footer's indent aligns with them.
+	out = append(out, "", dimStyle.Render("  "+footer))
 	for index := range out {
-		out[index] = m.truncateToWidth(out[index])
+		out[index] = m.truncateToWidthTail(out[index])
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, out...)
 }

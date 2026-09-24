@@ -438,12 +438,33 @@ func orDefault(value, fallback string) string {
 
 // ---- picker ----
 
+// pickMatches returns the sessions matching the Composer's filter text —
+// the Composer doubles as the picker's filter while the popup is open.
+// Case-insensitive substring on the title (free-text search, unlike the
+// Command Menu's command-prefix matching); an empty filter lists all.
+func (m *Model) pickMatches() []sessionEntry {
+	q := strings.ToLower(strings.TrimSpace(m.textarea.Value()))
+	if q == "" {
+		return m.sessions
+	}
+	var out []sessionEntry
+	for _, entry := range m.sessions {
+		if strings.Contains(strings.ToLower(entry.title), q) {
+			out = append(out, entry)
+		}
+	}
+	return out
+}
+
 func (m Model) updatePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyCtrlC:
 		return m, tea.Quit
 	case tea.KeyEsc:
+		// Dismiss: the Composer returns to its normal, empty state.
 		m.picking = false
+		m.textarea.Reset()
+		m.textarea.SetHeight(1)
 		m.refresh()
 		return m, nil
 	case tea.KeyUp:
@@ -451,16 +472,30 @@ func (m Model) updatePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.pickIndex--
 		}
 	case tea.KeyDown:
-		if m.pickIndex < len(m.sessions)-1 {
+		if m.pickIndex < len(m.pickMatches())-1 {
 			m.pickIndex++
 		}
 	case tea.KeyEnter:
-		if m.pickIndex >= 0 && m.pickIndex < len(m.sessions) {
-			entry := m.sessions[m.pickIndex]
-			m.picking = false
-			m.loadSession(entry)
+		if m.running {
 			return m, nil
 		}
+		matches := m.pickMatches()
+		if len(matches) == 0 {
+			return m, nil
+		}
+		entry := matches[clampIndex(m.pickIndex, len(matches))]
+		// The Composer returns to its normal, empty state.
+		m.picking = false
+		m.textarea.Reset()
+		m.textarea.SetHeight(1)
+		m.loadSession(entry)
+		return m, nil
+	default:
+		// The Composer is the filter: editing keys (runes, backspace, space)
+		// flow into it and re-narrow the list.
+		m.textarea, _ = m.textarea.Update(msg)
+		m.resizeEditor()
+		m.pickIndex = clampIndex(m.pickIndex, len(m.pickMatches()))
 	}
 	m.refresh()
 	return m, nil

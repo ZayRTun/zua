@@ -6,6 +6,7 @@ package tui
 // getters (lipgloss renders Ascii in the no-TTY test environment).
 
 import (
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -201,7 +202,7 @@ func TestHeaderPlainUnderNoColor(t *testing.T) {
 		t.Fatalf("launcher emitted ANSI escapes under a no-color profile:\n%q", view)
 	}
 	plain := stripANSI(view)
-	for _, want := range []string{"zua", "skills", "resume session"} {
+	for _, want := range []string{"zua", "skills", "Resume Session"} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("plain launcher missing %q:\n%s", want, plain)
 		}
@@ -300,7 +301,7 @@ func TestLauncherKeepsComposerGrounded(t *testing.T) {
 			lipgloss.Height(view), stripANSI(view))
 	}
 	plain := stripANSI(view)
-	for _, want := range []string{"resume session", "newer session", "zua"} {
+	for _, want := range []string{"Resume Session", "newer session", "zua"} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("launcher missing %q:\n%s", want, plain)
 		}
@@ -397,4 +398,172 @@ func TestHeaderFitsNarrowWidth(t *testing.T) {
 			t.Fatalf("header line %d wide overflows terminal width 44: %q", w, stripANSI(line))
 		}
 	}
+}
+
+// TestPickerFiltersFromComposer pins that the Composer is the picker's
+// filter while the popup is open: typing narrows the rows (case-insensitive
+// substring on the title), backspacing restores them, and the footer
+// reports the position in the filtered list.
+func TestPickerFiltersFromComposer(t *testing.T) {
+	m := sizeModel(t, New(t.TempDir(), settings.Settings{}, nil), 100, 40)
+	current, _ := tea.Model(m).Update(sessionsMsg{entries: []sessionEntry{
+		{title: "analyze this project", updated: "Sep 23 18:21"},
+		{title: "hello", updated: "Sep 23 09:20"},
+		{title: "hello two", updated: "Sep 23 09:10"},
+		{title: "unrelated work", updated: "Sep 23 09:03"},
+	}})
+	m = current.(Model)
+	m = typeKeys(t, m, "HEL")
+	plain := stripANSI(m.View())
+	if strings.Contains(plain, "analyze this project") || strings.Contains(plain, "unrelated work") {
+		t.Fatalf("filter must narrow the rows:\n%s", plain)
+	}
+	for _, want := range []string{"hello", "hello two", "Resume Session - (1/2)"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("filtered picker missing %q:\n%s", want, plain)
+		}
+	}
+	// Backspace clears the filter and all rows return.
+	current, _ = tea.Model(m).Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	current, _ = tea.Model(m).Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	current, _ = tea.Model(m).Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	m = current.(Model)
+	if got := m.textarea.Value(); got != "" {
+		t.Fatalf("backspace did not clear the filter: %q", got)
+	}
+	plain = stripANSI(m.View())
+	for _, want := range []string{"analyze this project", "unrelated work", "Resume Session - (1/4)"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("unfiltered picker missing %q:\n%s", want, plain)
+		}
+	}
+}
+
+// TestPickerNoMatchShowsPlaceholder pins the empty-filter result: a dim
+// "no matching sessions" row instead of an empty panel.
+func TestPickerNoMatch(t *testing.T) {
+	m := sizeModel(t, New(t.TempDir(), settings.Settings{}, nil), 100, 40)
+	current, _ := tea.Model(m).Update(sessionsMsg{entries: []sessionEntry{
+		{title: "hello", updated: "Sep 23 09:20"},
+	}})
+	m = current.(Model)
+	m = typeKeys(t, m, "zzz")
+	plain := stripANSI(m.View())
+	for _, want := range []string{"no matching sessions", "Resume Session - (0/0)"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("empty filter result missing %q:\n%s", want, plain)
+		}
+	}
+}
+
+// TestPickerEscResetsComposer pins Esc: the picker dismisses and the
+// Composer returns to its normal, empty state (no filter text left).
+func TestPickerEscResetsComposer(t *testing.T) {
+	m := sizeModel(t, New(t.TempDir(), settings.Settings{}, nil), 100, 40)
+	current, _ := tea.Model(m).Update(sessionsMsg{entries: []sessionEntry{{title: "hello", updated: "Sep 23 09:20"}}})
+	m = current.(Model)
+	m = typeKeys(t, m, "hel")
+	// The Composer really is the filter: the text must land and narrow the
+	// list before Esc clears it.
+	if got := m.textarea.Value(); got != "hel" {
+		t.Fatalf("typed keys must reach the composer as the filter, got %q", got)
+	}
+	current, _ = tea.Model(m).Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = current.(Model)
+	if got := m.textarea.Value(); got != "" {
+		t.Fatalf("esc must reset the composer, got %q", got)
+	}
+	if m.picking {
+		t.Fatal("esc must dismiss the picker")
+	}
+}
+
+// TestPickerEnterLoadsAndResetsComposer drives a real session file through
+// the full path: the Composer filters, Enter loads the highlighted session,
+// and the Composer returns to its normal empty state.
+func TestPickerEnterLoadsAndResetsComposer(t *testing.T) {
+	workspace := t.TempDir()
+	id := "11111111-2222-3333-4444-555555555555"
+	dir := filepath.Join(workspace, ".harness", "sessions")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	record := "{\"type\":\"session\",\"data\":{\"Version\":2,\"Session\":{\"ID\":\"" + id +
+		"\",\"CreatedAt\":\"2026-09-23T09:10:57.144039Z\"}}}\n" +
+		"{\"type\":\"item\",\"data\":{\"Item\":{\"Sequence\":1,\"RecordedAt\":\"2026-09-23T09:10:57.165612Z\"," +
+		"\"Kind\":\"input\",\"Data\":{\"ID\":\"c079e8cf-d55d-4ac3-b3f1-cacb2ffb3030\",\"Kind\":\"external\"," +
+		"\"Payload\":\"resume me please\"}}}}\n"
+	if err := os.WriteFile(filepath.Join(dir, id+".session.jsonl"), []byte(record), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	m := sizeModel(t, New(workspace, settings.Settings{}, nil), 100, 40)
+	// Two sessions so the filter decides what Enter loads: the decoy is
+	// first in the list, but the filter narrows to the target.
+	current, _ := tea.Model(m).Update(sessionsMsg{entries: []sessionEntry{
+		{title: "decoy session", updated: "Sep 23 19:00"},
+		{id: id, title: "resume me please", updated: "Sep 23 09:20"},
+	}})
+	m = current.(Model)
+	m = typeKeys(t, m, "resume")
+	if plain := stripANSI(m.View()); strings.Contains(plain, "decoy session") {
+		t.Fatalf("filter must narrow to the target session:\n%s", plain)
+	}
+	current, _ = tea.Model(m).Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = current.(Model)
+	if m.picking {
+		t.Fatal("enter must load the session and dismiss the picker")
+	}
+	if got := m.textarea.Value(); got != "" {
+		t.Fatalf("composer must return to its normal empty state, got %q", got)
+	}
+	if m.sessionID != id {
+		t.Fatalf("sessionID = %q, want the loaded session", m.sessionID)
+	}
+	if plain := stripANSI(m.View()); !strings.Contains(plain, "resume me please") {
+		t.Fatalf("loaded transcript missing the session's prompt:\n%s", plain)
+	}
+}
+
+// TestPickerStyle pins the picker's chrome mirroring the Command Menu: no
+// selection glyph, rows aligned on a two-space indent, the selected row's
+// title accented with a dim datetime, and unselected rows fully dim.
+func TestPickerSelectedStyle(t *testing.T) {
+	prior := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.ANSI256)
+	defer lipgloss.SetColorProfile(prior)
+	m := sizeModel(t, New(t.TempDir(), settings.Settings{}, nil), 100, 40)
+	current, _ := tea.Model(m).Update(sessionsMsg{entries: []sessionEntry{
+		{title: "first work", updated: "Sep 23 18:21"},
+		{title: "second work", updated: "Sep 23 09:20"},
+	}})
+	m = current.(Model)
+	view := m.View()
+	plain := stripANSI(view)
+	if strings.Contains(plain, "▸") {
+		t.Fatal("picker must not render a selection glyph")
+	}
+	accent, dim := 0, 0
+	for _, line := range strings.Split(view, "\n") {
+		t := strings.TrimRight(stripANSI(line), " ")
+		switch {
+		case strings.Contains(line, "\x1b[94m") && (strings.Contains(t, "first work") || strings.Contains(t, "second work")):
+			accent++
+		case strings.Contains(line, "\x1b[3;90m") && (strings.Contains(t, "first work") || strings.Contains(t, "second work")):
+			dim++
+		}
+	}
+	if accent != 1 {
+		t.Fatalf("exactly one selected row may carry the accent, found %d:\n%s", accent, plain)
+	}
+	if dim != 1 {
+		t.Fatalf("the unselected row must render dim, found %d:\n%s", dim, plain)
+	}
+	// The selected row's title carries the accent; its datetime does not.
+	for _, line := range strings.Split(view, "\n") {
+		if strings.Contains(line, "\x1b[94mfirst work\x1b[0m\x1b[3;90m  Sep 23 18:21") {
+			return
+		}
+	}
+	t.Fatalf("selected row must accent only the title, datetime dim:\n%s", plain)
 }
