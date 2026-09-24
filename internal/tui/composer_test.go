@@ -219,3 +219,48 @@ func TestLayoutHeightIsDynamic(t *testing.T) {
 		t.Fatalf("viewport height %d with 3-line editor, want %d", m.viewport.Height, base-2)
 	}
 }
+
+// TestComposerContinuationIndent pins that multi-line input aligns: the
+// prompt glyph occupies line one, and every further row — from a hard
+// newline — starts with the prompt's two-column indent.
+func TestComposerContinuationIndent(t *testing.T) {
+	m := resize(t, 100, 30)
+	m.textarea.SetValue("Current direction: recent work is UI polish\nand booting a fresh session")
+	m.resizeEditor()
+	m.refresh()
+	lines := strings.Split(stripANSI(m.View()), "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "and booting a fresh session") {
+			if !strings.HasPrefix(strings.TrimRight(line, " "), "  and booting") {
+				t.Fatalf("continuation row must carry the two-space indent:\n%q", line)
+			}
+			return
+		}
+	}
+	t.Fatalf("continuation row missing from view:\n%s", stripANSI(m.View()))
+}
+
+// TestDroppedFilePathSendsAsPrompt pins that a dropped file or image path —
+// which starts with "/" on macOS but contains further slashes in its first
+// token — reaches the agent as an ordinary prompt instead of the command
+// dispatcher's "unknown command".
+func TestDroppedFilePathSendsAsPrompt(t *testing.T) {
+	m := resize(t, 100, 30)
+	m.textarea.SetValue("/Users/zayar/Downloads/Screenshots/Screenshot 1.png describe this image")
+	current, _ := tea.Model(m).Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = current.(Model)
+	if !m.running {
+		t.Fatal("a dropped path must send as a prompt")
+	}
+	if plain := stripANSI(m.View()); strings.Contains(plain, "unknown command") {
+		t.Fatalf("dropped path must not run through the command dispatcher:\n%s", plain)
+	}
+	// A control: a genuine unknown command still errors the old way.
+	m = resize(t, 100, 30)
+	m.textarea.SetValue("/notacommand")
+	current, _ = tea.Model(m).Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = current.(Model)
+	if plain := stripANSI(m.View()); !strings.Contains(plain, "unknown command /notacommand") {
+		t.Fatalf("unknown commands must still error:\n%s", plain)
+	}
+}

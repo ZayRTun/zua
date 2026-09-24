@@ -281,7 +281,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				if input != "" {
 					m.textarea.Reset()
 					m.textarea.SetHeight(1)
-					if strings.HasPrefix(input, "/") {
+					if looksLikeCommand(input) {
 						cmds = append(cmds, m.command(input)...)
 					} else {
 						cmds = append(cmds, m.beginTurn(input, input)...)
@@ -329,6 +329,22 @@ func (m *Model) resizeEditor() {
 	lines := strings.Count(m.textarea.Value(), "\n") + 1
 	m.textarea.SetHeight(min(max(lines, 1), 8))
 	m.setViewportHeight()
+}
+
+// looksLikeCommand reports whether the input should run through the command
+// dispatcher: a leading "/" whose first token contains no further slash —
+// commands never do. A dropped file path starts with "/" on macOS but its
+// first token holds the rest of the path, so it reaches the agent as an
+// ordinary prompt instead of "unknown command".
+func looksLikeCommand(input string) bool {
+	token := input
+	if cut := strings.IndexAny(token, " \t\n"); cut >= 0 {
+		token = token[:cut]
+	}
+	if !strings.HasPrefix(token, "/") {
+		return false
+	}
+	return !strings.Contains(strings.TrimPrefix(token, "/"), "/")
 }
 
 func (m *Model) appendBlock(b block) {
@@ -913,11 +929,19 @@ var (
 
 // renderComposer draws the Composer: a thin rule above, the accent ❯ prompt
 // with the input, and a rule below — no border box, no placeholder, no
-// hint line.
+// hint line. Continuation rows carry the prompt's two-column indent so
+// multi-line input reads as one aligned block.
 func (m Model) renderComposer() string {
 	rule := m.truncateToWidth(composerRuleStyle.Render(strings.Repeat("─", max(m.width, 1))))
-	line := composerPromptStyle.Render("❯ ") + m.textarea.View()
-	return lipgloss.JoinVertical(lipgloss.Left, rule, line, rule)
+	var rows []string
+	for index, row := range strings.Split(m.textarea.View(), "\n") {
+		if index == 0 {
+			rows = append(rows, composerPromptStyle.Render("❯ ")+row)
+		} else {
+			rows = append(rows, "  "+row)
+		}
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, rule, strings.Join(rows, "\n"), rule)
 }
 
 // viewMenu renders the Command Menu above the Composer: filtered
