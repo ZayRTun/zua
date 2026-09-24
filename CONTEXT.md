@@ -24,6 +24,10 @@ _Avoid_: item, entry, message (reserved for what the model said)
 The transcript rendering of one tool call — a `●` status dot, the tool name, its arguments, and its outcome lines hanging off `└` branches.
 _Avoid_: tool call display, action, collapsed entry
 
+**Outcome Line**:
+One `└`-prefixed row under a Tool Card header carrying tool output, a ✓/✗ status, or a `+N more` tail. A card shows a fixed few when collapsed; ctrl+o expands all of them.
+_Avoid_: output line, result line, log line
+
 **Verbose Transcript**:
 The transcript expanded to show every tool card's full output; toggled with ctrl+o.
 _Avoid_: debug view, full mode

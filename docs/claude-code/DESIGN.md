@@ -314,3 +314,25 @@ Style:      warm terracotta accent, dashed input, hot pink tools, whimsical thin
 - Don't over-border — most content should flow without frames
 - Don't use generic "Loading..." — the random verbs are part of the personality
 - Don't colorize AI response body text — white for trust and readability
+
+## Zua decision: transcript reskin (screenshots supersede the boxed era)
+
+The doc's Tool Call Border (hot-pink boxes), dashed-border User Prompt,
+and Permission-box sections describe an older Claude Code iteration.
+The current reference screenshots (claude tui 3.png) are authoritative:
+
+- **Tool Card** — borderless. Header `● Name(args)`: dot neutral white,
+  name bold, args muted. Outcome lines each on their own row as
+  `└ text`, muted, hanging-indent wraps, tail `└ +N more`. Collapsed
+  budget: 4 outcome rows; ctrl+o Verbose Transcript shows all. While
+  running the dot is accent; on completion white; failures stay white
+  with the failure in `└ ✗ reason` (red).
+- **User Prompt** — `❯ text` on a full-row Surface highlight bar,
+  every prompt block, no dashed border.
+- **Assistant message** — `●` prefix on the first line, white quiet
+  text. Markdown restyled from glamour's stock dark palette to CC's
+  quiet look: white body, white headings (no blue), inline code dim
+  without loud background chips, muted links; tables and code-fence
+  syntax highlighting stay.
+- **Diff** — flat line-numbered rows with green/red background tints
+  (existing LCS diff in the TUI, reskinned).
