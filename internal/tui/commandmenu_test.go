@@ -181,39 +181,34 @@ func TestMenuEscDismissesThenEnterSends(t *testing.T) {
 	}
 }
 
-// TestMenuEnterAcceptsWithoutSending pins the deliberate divergence: enter
-// accepts the highlighted entry into the input without sending; a second
-// enter (menu closed) sends.
-func TestMenuEnterAcceptsWithoutSendingThenSends(t *testing.T) {
+// TestMenuEnterExecutesHighlighted pins the footer contract: Tab completes
+// (inserts the entry into the Composer), Enter accepts = runs the
+// highlighted entry immediately — no insert step, no second enter.
+func TestMenuEnterExecutesHighlighted(t *testing.T) {
+	// Enter on /help runs it right away: help output lands, the menu is
+	// closed, and the Composer is reset.
 	m := typeKeys(t, resize(t, 100, 30), "/hel")
 	current, _ := tea.Model(m).Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = current.(Model)
-	if got := m.textarea.Value(); got != "/help " {
-		t.Fatalf("enter accepted %q, want \"/help \"", got)
-	}
-	if m.running {
-		t.Fatal("enter with the menu open must not send")
+	if got := m.textarea.Value(); got != "" {
+		t.Fatalf("enter must execute, not prefill: %q", got)
 	}
 	if strings.Contains(stripANSI(m.View()), "↑/↓ select") {
-		t.Fatalf("menu must close after accepting:\n%s", stripANSI(m.View()))
-	}
-
-	// Second enter sends the accepted command.
-	current, _ = tea.Model(m).Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = current.(Model)
-	if m.running {
-		t.Fatal("/help must not start a turn")
+		t.Fatalf("menu must close after executing:\n%s", stripANSI(m.View()))
 	}
 	if !strings.Contains(stripANSI(m.View()), "commands:") {
-		t.Fatalf("second enter did not run the accepted command:\n%s", stripANSI(m.View()))
+		t.Fatalf("enter did not execute the highlighted command:\n%s", stripANSI(m.View()))
 	}
 
-	// Accepting an arg-taking command inserts the command, not the placeholder.
+	// Tab completes instead: inserts the entry, menu closes, nothing runs.
 	m = typeKeys(t, resize(t, 100, 30), "/mo")
-	current, _ = tea.Model(m).Update(tea.KeyMsg{Type: tea.KeyEnter})
+	current, _ = tea.Model(m).Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = current.(Model)
 	if got := m.textarea.Value(); got != "/model " {
-		t.Fatalf("enter on /model accepted %q, want \"/model \"", got)
+		t.Fatalf("tab on /model completed %q, want \"/model \"", got)
+	}
+	if strings.Contains(stripANSI(m.View()), "current model") {
+		t.Fatalf("tab must not execute the entry:\n%s", stripANSI(m.View()))
 	}
 }
 
@@ -348,10 +343,10 @@ func TestSkillMenuFilterCaseInsensitive(t *testing.T) {
 	}
 }
 
-// TestSkillMenuAcceptFillsToken checks enter accepts a skill entry into the
-// input without sending, filling the /skill:name token with a trailing space
-// so arguments can follow (issue #5).
-func TestSkillMenuAcceptFillsToken(t *testing.T) {
+// TestSkillMenuTabFillsToken checks tab completes a skill entry into the
+// input, filling the /skill:name token with a trailing space so arguments
+// can follow (issue #5) — tab is the complete action; enter would run it.
+func TestSkillMenuTabFillsToken(t *testing.T) {
 	dir := t.TempDir()
 	extra := t.TempDir()
 	writeSkill(t, filepath.Join(extra, "journal"),
@@ -359,22 +354,22 @@ func TestSkillMenuAcceptFillsToken(t *testing.T) {
 
 	m := seedSkills(t, resize(t, 100, 30), dir, extra)
 	m = typeKeys(t, m, "/skill:jou")
-	current, _ := tea.Model(m).Update(tea.KeyMsg{Type: tea.KeyEnter})
+	current, _ := tea.Model(m).Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = current.(Model)
 
-	// Rendered Composer carries the accepted token; textarea.Value() pins
+	// Rendered Composer carries the completed token; textarea.Value() pins
 	// the exact trailing space + cursor-at-end that makes room for arguments.
 	if !strings.Contains(stripANSI(m.View()), "/skill:journal") {
-		t.Fatalf("Composer missing accepted /skill:journal:\n%s", stripANSI(m.View()))
+		t.Fatalf("Composer missing completed /skill:journal:\n%s", stripANSI(m.View()))
 	}
 	if got := m.textarea.Value(); got != "/skill:journal " {
-		t.Fatalf("accept produced %q, want \"/skill:journal \"", got)
+		t.Fatalf("completion produced %q, want \"/skill:journal \"", got)
 	}
 	if m.running {
-		t.Fatal("enter with the menu open must not send")
+		t.Fatal("tab must complete, not run the skill")
 	}
 	if strings.Contains(stripANSI(m.View()), "↑/↓ select") {
-		t.Fatalf("menu must close after accepting:\n%s", stripANSI(m.View()))
+		t.Fatalf("menu must close after completing:\n%s", stripANSI(m.View()))
 	}
 }
 
@@ -552,5 +547,29 @@ func TestMenuScrollsWithSelection(t *testing.T) {
 	}
 	if view := stripANSI(m.View()); !strings.Contains(view, "(7/19)") {
 		t.Fatalf("footer must report position 7 of 19:\n%s", view)
+	}
+}
+
+// TestSkillMenuEnterRuns pins that enter on a skill row runs the skill
+// immediately (no prefill): the turn starts, the Composer resets, and the
+// menu closes — tab is the way to fill the token for arguments.
+func TestSkillMenuEnterRuns(t *testing.T) {
+	dir := t.TempDir()
+	extra := t.TempDir()
+	writeSkill(t, filepath.Join(extra, "journal"),
+		"name: journal\ndescription: keep a journal\ndisable-model-invocation: true\n", "Body.")
+
+	m := seedSkills(t, resize(t, 100, 30), dir, extra)
+	m = typeKeys(t, m, "/skill:jou")
+	current, _ := tea.Model(m).Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = current.(Model)
+	if got := m.textarea.Value(); got != "" {
+		t.Fatalf("enter must run the skill, not prefill: %q", got)
+	}
+	if strings.Contains(stripANSI(m.View()), "↑/↓ select") {
+		t.Fatalf("menu must close after running the skill:\n%s", stripANSI(m.View()))
+	}
+	if !m.running {
+		t.Fatal("enter on a skill row did not start the turn")
 	}
 }

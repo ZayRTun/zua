@@ -609,9 +609,9 @@ func (m Model) menuVisible() bool {
 
 // handleMenuKeys consumes keys while the Command Menu is open. Locked
 // precedence (DESIGN.md): ↑/↓ move the selection (never scroll the
-// transcript or move the Composer cursor), tab completes, esc dismisses before
-// any quit behavior, and enter accepts the highlighted entry into the input
-// WITHOUT sending — a second enter, with the menu closed, sends.
+// transcript or move the Composer cursor), tab completes into the Composer,
+// esc dismisses before any quit behavior, and enter accepts = runs the
+// highlighted entry immediately (no prefill, no second enter).
 // Returns (handled, cmd).
 func (m *Model) handleMenuKeys(msg tea.KeyMsg) (bool, []tea.Cmd) {
 	if !m.menuVisible() {
@@ -631,7 +631,12 @@ func (m *Model) handleMenuKeys(msg tea.KeyMsg) (bool, []tea.Cmd) {
 		}
 		return true, nil
 	case tea.KeyTab:
-		m.acceptMenuItem(matches[m.menuIndex])
+		// Complete: fill the highlighted entry's insertable name into the
+		// Composer with a trailing space, leaving room to type arguments.
+		item := matches[m.menuIndex]
+		m.textarea.SetValue(item.insert + " ")
+		m.textarea.CursorEnd()
+		m.resizeEditor()
 		return true, nil
 	case tea.KeyEsc:
 		m.menuHidden = true
@@ -640,20 +645,16 @@ func (m *Model) handleMenuKeys(msg tea.KeyMsg) (bool, []tea.Cmd) {
 		if m.running {
 			return true, nil
 		}
-		m.acceptMenuItem(matches[m.menuIndex])
-		m.menuHidden = true // a second enter (menu closed) sends
-		return true, nil
+		// Enter accepts = runs the highlighted entry immediately; Tab is the
+		// complete action (insert into the Composer). No prefill, no second
+		// enter.
+		item := matches[m.menuIndex]
+		m.textarea.Reset()
+		m.textarea.SetHeight(1)
+		m.menuHidden = true
+		return true, m.command(item.insert)
 	}
 	return false, nil
-}
-
-// acceptMenuItem completes the input to the highlighted command (the
-// insertable name — never the displayed argument placeholder) and parks the
-// cursor at the end, leaving room to type arguments.
-func (m *Model) acceptMenuItem(item menuItem) {
-	m.textarea.SetValue(item.insert + " ")
-	m.textarea.CursorEnd()
-	m.resizeEditor()
 }
 
 // clampIndex keeps a selection inside [0, n). Pure, so rendering can clamp

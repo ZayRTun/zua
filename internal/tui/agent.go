@@ -135,6 +135,11 @@ func (m *Model) listen() tea.Cmd {
 }
 
 func agentPath() string {
+	// Test/CI override: a stub agent keeps spawned-turn tests hermetic and
+	// ends them instantly (no async session writes racing t.TempDir cleanup).
+	if stub := os.Getenv("ZUA_AGENT_PATH"); stub != "" {
+		return stub
+	}
 	executable, err := os.Executable()
 	if err == nil {
 		sibling := filepath.Join(filepath.Dir(executable), "zua-agent")
