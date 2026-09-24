@@ -321,21 +321,33 @@ The doc's Tool Call Border (hot-pink boxes), dashed-border User Prompt,
 and Permission-box sections describe an older Claude Code iteration.
 The current reference screenshots (claude tui 3.png) are authoritative:
 
-- **Tool Card** — borderless. Header `● Name(args)`: dot green when the
-  call completed, accent while running (spinner activity lives in the
-  turn status row), name bold white, args regular white. Outcome lines
-  each on their own row as `└ text`, muted, hanging-indent wraps, tail
-  `└ +N more`; ✓ green / ✗ red status marks inside the lines.
-  Collapsed budget: 4 outcome rows; ctrl+o Verbose Transcript shows
+- **Tool Card** — borderless. Header `● Name(args)` on one line: dot
+  green when the call completed, accent while running (spinner
+  activity lives in the turn status row), name bold white, args
+  regular white. Bash args carry no `$` prefix. Args hard-clip to the
+  row with the ellipsis inserted before the closing quote/paren
+  (`'…')`), never soft-wrap. Outcome lines each on their own row as
+  `└ text`, muted, ✓ green / ✗ red status marks inside the lines;
+  they hard-clip at the terminal edge — no wrap, no ellipsis.
+  Collapsed budget: 4 outcome rows, tail `└ +N more` (descriptive:
+  `└ + 14 more hard-coded colors`); ctrl+o Verbose Transcript shows
   all.
+- **Card grouping** — consecutive tool cards stack with no blank line
+  between them; blank lines separate groups (prompt before, prose
+  after), not every block.
 - **User Prompt** — `❯ text` on a highlight bar spanning prompt + text
-  with trailing pad, NOT the full terminal row. Every prompt block, no
-  dashed border.
-- **Assistant message** — `●` prefix on the first line (the white dot),
-  wrapped lines hanging-indent under the text, white quiet
-  content. Markdown restyled from glamour's stock dark palette to CC's
-  quiet look: white body, white headings (no blue), inline code dim
-  without loud background chips, muted links; tables and code-fence
-  syntax highlighting stay.
-- **Diff** — flat line-numbered rows with green/red background tints
-  (existing LCS diff in the TUI, reskinned).
+  with trailing pad, NOT the full terminal row; the `❯` renders
+  dark-on-light inside the bar, text bold white. Every prompt block,
+  no dashed border.
+- **Assistant message** — `●` prefix on the first line (the white
+  dot); wrapped lines return flush to column 0, no hanging indent.
+- **Assistant renderer** — CC-faithful plain text, NOT glamour:
+  heading markers (`##`) stay literal, list markers become `•`
+  bullets, code fences and links stay plain, no syntax highlighting,
+  no table styling. The stock glamour pipeline is retired for the
+  transcript.
+- **Diff** — flat rows with green/red background tints and file line
+  numbers (`12` removed / `12 +` added). filetools reports the hunk's
+  line number in the Edit result prose ("at line N"); the TUI parses
+  it — the coordinator's wire shape is unchanged. Write cards keep
+  their preview rows.
