@@ -35,7 +35,7 @@ _Avoid_: (always distinguish from Tool Card)
 ### Interface
 
 **Header**:
-The launcher's top block: logo, app name, workspace path, and a stats line (model · thinking level · skills count).
+The launcher's top block: the three-row Unreal Agent smiley mascot, the product name, the workspace basename with git branch, and a stats line (model · thinking level · skills count). Fresh sessions only — never rendered in a resumed transcript.
 _Avoid_: title bar, banner
 
 **Composer**:
@@ -43,7 +43,7 @@ The input area at the bottom where the user types prompts and slash commands —
 _Avoid_: prompt box, editor (an implementation detail), input field, bordered box
 
 **Usage Line**:
-The single line below the Composer: `↑in ↓out R… W… CH…% $… context%/window (auto) - model • thinking level`, computed from the model catalog.
+The muted two-row footer below the Composer: an identity row (workspace basename (branch) · session name) and a meter row `↑in ↓out R… W… CH…% $… context%/window` with the model tail right-aligned, computed from the model catalog. It is a meter — never a status area.
 _Avoid_: status line, footer, hint line
 
 **Command Menu**:
