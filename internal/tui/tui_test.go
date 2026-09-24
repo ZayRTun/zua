@@ -51,7 +51,7 @@ func TestReplayAndListSessions(t *testing.T) {
 		t.Fatalf("session title %q, want the user prompt", entry.title)
 	}
 
-	blocks, id, err := replaySession(workspace, entry)
+	blocks, id, _, err := replaySession(workspace, entry)
 	if err != nil {
 		t.Fatalf("replaySession: %v", err)
 	}

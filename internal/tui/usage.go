@@ -2,10 +2,14 @@ package tui
 
 import (
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 
 	"unreal-agent-tui/internal/catalog"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/reflow/truncate"
 )
 
 // autoCompactionVerified reports whether the harness's auto-compaction is
@@ -17,38 +21,66 @@ import (
 const autoCompactionVerified = false
 
 // usageLine renders the Usage Line below the Composer (glossary: Usage
-// Line): session-spanning token totals, latest-turn cache hit, catalog
-// cost, context percentage, and the `- model • thinking level` tail. It is
-// a meter, not a status area — the running Turn's spinner and gerund verb
-// render in the transcript instead. Segments depending on catalog data are
-// omitted for catalog-missing models — never invented.
+// Line), two rows in the pi-style footer layout: the identity row —
+// workspace directory name, git branch, session name truncated to fit —
+// and the meter row — session-spanning token totals, latest-turn cache
+// hit, catalog cost, context percentage on the left with the
+// `- model • thinking level` tail right-aligned. Fresh sessions show the
+// zero segments rather than hiding them; segments depending on catalog
+// data are omitted for catalog-missing models — never invented. The line
+// is a meter, not a status area — the running Turn's spinner and gerund
+// verb render in the transcript instead.
 func (m Model) usageLine() string {
-	var segments []string
-	if m.sessionIn > 0 || m.sessionOut > 0 {
-		segments = append(segments,
-			"↑"+formatTokens(m.sessionIn),
-			"↓"+formatTokens(m.sessionOut))
-		if m.sessionCached > 0 {
-			segments = append(segments, "R"+formatTokens(m.sessionCached))
-		}
-		if m.sessionCacheWrite > 0 {
-			segments = append(segments, "W"+formatTokens(m.sessionCacheWrite))
-		}
-		if m.turnCached > 0 && m.turnIn > 0 {
-			segments = append(segments, fmt.Sprintf("CH%.1f%%", float64(m.turnCached)/float64(m.turnIn)*100))
-		}
+	return lipgloss.JoinVertical(lipgloss.Left, m.usageIdentity(), m.usageMeter())
+}
+
+// usageIdentity renders the identity row: directory name, git branch, and
+// the session's name truncated so the row never overflows the width. With
+// no session name yet (fresh boot, no turns) only the directory and
+// branch show — no dangling bullet.
+func (m Model) usageIdentity() string {
+	identity := filepath.Base(m.workspace)
+	if m.branch != "" {
+		identity += " (" + m.branch + ")"
 	}
-	if entry, ok := catalog.Lookup(m.cfg.Model); ok {
-		if m.sessionIn > 0 || m.sessionOut > 0 {
-			cost := entry.Cost(catalog.Usage{
-				Input:      m.sessionIn,
-				Cached:     m.sessionCached,
-				CacheWrite: m.sessionCacheWrite,
-				Output:     m.sessionOut,
-			})
-			segments = append(segments, formatCost(cost))
-		}
-		if m.turnIn > 0 && entry.ContextWindow > 0 {
+	if m.sessionName == "" {
+		return m.truncateToWidth(identity)
+	}
+	remaining := m.width - lipgloss.Width(identity) - lipgloss.Width(" • ")
+	if remaining < 4 { // no room for a title: drop it whole
+		return m.truncateToWidth(identity)
+	}
+	title := truncate.StringWithTail(m.sessionName, uint(remaining), "…")
+	return m.truncateToWidth(identity + " • " + title)
+}
+
+// usageMeter renders the meter row: token/cost/context segments on the
+// left, the `- model • thinking level` tail right-aligned to the terminal
+// width.
+func (m Model) usageMeter() string {
+	var segments []string
+	segments = append(segments,
+		"↑"+formatTokens(m.sessionIn),
+		"↓"+formatTokens(m.sessionOut))
+	if m.sessionCached > 0 {
+		segments = append(segments, "R"+formatTokens(m.sessionCached))
+	}
+	if m.sessionCacheWrite > 0 {
+		segments = append(segments, "W"+formatTokens(m.sessionCacheWrite))
+	}
+	if m.turnCached > 0 && m.turnIn > 0 {
+		segments = append(segments, fmt.Sprintf("CH%.1f%%", float64(m.turnCached)/float64(m.turnIn)*100))
+	}
+	entry, catalogKnown := catalog.Lookup(m.cfg.Model)
+	if catalogKnown {
+		cost := entry.Cost(catalog.Usage{
+			Input:      m.sessionIn,
+			Cached:     m.sessionCached,
+			CacheWrite: m.sessionCacheWrite,
+			Output:     m.sessionOut,
+		})
+		segments = append(segments, formatCost(cost))
+		if entry.ContextWindow > 0 {
 			pct, level := m.usageContext(entry, m.turnIn)
 			segment := fmt.Sprintf("%.1f%%/%s", pct, formatTokens(entry.ContextWindow))
 			switch level {
@@ -65,16 +97,19 @@ func (m Model) usageLine() string {
 	if autoCompactionVerified {
 		segments = append(segments, "(auto)")
 	}
-	line := strings.Join(segments, " ")
-	if line != "" {
-		line += " "
-	}
-	line += "- " + orDefault(m.cfg.Model, "(default model)") +
-		" • " + orDefault(m.cfg.ThinkingLevel, "high")
+	left := strings.Join(segments, " ")
 	if m.loading {
-		line = statusStyle.Render(m.spinner.View()+" loading sessions…") + " " + line
+		left = statusStyle.Render(m.spinner.View()+" loading sessions…") + " " + left
 	}
-	return m.truncateToWidth(line)
+	tail := "- " + orDefault(m.cfg.Model, "(default model)") +
+		" • " + orDefault(m.cfg.ThinkingLevel, "high")
+	pad := m.width - lipgloss.Width(left) - lipgloss.Width(tail)
+	if pad >= 2 { // one space minimum between meter and tail, tail flush right
+		return left + strings.Repeat(" ", pad) + tail
+	}
+	// Narrow terminal: clip the meter so the tail still fits flush right.
+	left = truncate.String(left, uint(max(m.width-lipgloss.Width(tail)-1, 1)))
+	return left + " " + tail
 }
 
 // usageContext returns the prompt tokens' share of the entry's context

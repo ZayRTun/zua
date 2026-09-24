@@ -75,22 +75,33 @@ func sessionTitle(ctx context.Context, store *localfile.Store, id session.ID) st
 // and tool cards) from a persisted session so a resumed transcript looks like
 // a live one. Tool cards carry the recorded call arguments and final status,
 // so they render through the same collapsed/verbose path as live cards.
-func replaySession(workspace string, entry sessionEntry) ([]block, string, error) {
+// sessionUsage carries the Usage Line state rebuilt from a persisted
+// session: sums over all model_response records (session spans) and the
+// latest record (turn-level values, so the cache-hit and context segments
+// survive a resume).
+type sessionUsage struct {
+	in, out, cached, cacheWrite int64
+	turnIn, turnOut             int64
+	turnCached, turnCacheWrite  int64
+}
+
+func replaySession(workspace string, entry sessionEntry) ([]block, string, sessionUsage, error) {
 	store, err := localfile.New(sessionsDirectory(workspace))
 	if err != nil {
-		return nil, "", err
+		return nil, "", sessionUsage{}, err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
 	blocks := []block{}
+	var usage sessionUsage
 	cards := map[string]*toolCard{} // callID → card, updated by later statuses
 	id := session.ID(entry.id)
 	after := sessionstore.BeforeFirst
 	for {
 		page, err := store.Items(ctx, id, after, 200)
 		if err != nil {
-			return nil, "", err
+			return nil, "", sessionUsage{}, err
 		}
 		for _, item := range page.Items {
 			switch data := item.Data.(type) {
@@ -102,6 +113,13 @@ func replaySession(workspace string, entry sessionEntry) ([]block, string, error
 					}
 				}
 			case sessionstore.ModelResponse:
+				u := data.Response.Usage
+				usage.in += u.InputTokens
+				usage.out += u.OutputTokens
+				usage.cached += u.CachedInputTokens
+				usage.cacheWrite += u.CacheWriteInputTokens
+				usage.turnIn, usage.turnOut = u.InputTokens, u.OutputTokens
+				usage.turnCached, usage.turnCacheWrite = u.CachedInputTokens, u.CacheWriteInputTokens
 				for _, output := range data.Response.Output {
 					switch output.Type {
 					case llm.ItemMessage:
@@ -132,7 +150,7 @@ func replaySession(workspace string, entry sessionEntry) ([]block, string, error
 		}
 		after = page.NextAfter
 	}
-	return blocks, entry.id, nil
+	return blocks, entry.id, usage, nil
 }
 
 // applyReplayStatus folds one persisted tool-call status into a replayed card.

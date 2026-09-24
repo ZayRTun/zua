@@ -3,6 +3,7 @@ package tui
 import (
 	"math/rand/v2"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -61,6 +62,8 @@ type Model struct {
 	cfg         settings.Settings // resolved configuration (settings file precedence already applied)
 	turnVerb    string            // spinner verb chosen for the running Turn
 	turnStarted time.Time         // when the running Turn began — drives the status row's elapsed seconds
+	branch      string            // workspace's git branch, "" when not a repository
+	sessionName string            // current session's name — its first user prompt, collapsed
 
 	viewport   viewport.Model
 	textarea   textarea.Model
@@ -106,6 +109,7 @@ func New(workspace string, cfg settings.Settings, skillDirs []string) Model {
 	if err != nil {
 		absolute = workspace
 	}
+	branch := gitBranch(absolute)
 	ta := textarea.New()
 	// The Composer draws its own accent ❯ prompt; the textarea itself stays
 	// bare — no prompt glyph, no line-number gutter, no placeholder — and
@@ -129,6 +133,7 @@ func New(workspace string, cfg settings.Settings, skillDirs []string) Model {
 		skills:     discoverSkills(absolute, skillDirs),
 		textarea:   ta,
 		viewport:   viewport.New(80, 20),
+		branch:     branch,
 		spinner:    spinner.New(spinner.WithSpinner(claudeSpinner)),
 		toolBlocks: map[string]int{},
 	}
@@ -338,8 +343,27 @@ func (m *Model) resetToHeader() {
 	m.sessionID = ""
 	m.toolBlocks = map[string]int{}
 	m.blocks = []block{{kind: blockHeader}}
+	m.sessionName = ""
+	m.sessionIn, m.sessionOut = 0, 0
+	m.sessionCached, m.sessionCacheWrite = 0, 0
+	m.turnIn, m.turnOut = 0, 0
+	m.turnCached, m.turnCacheWrite = 0, 0
 	m.viewport.GotoTop()
 	m.refresh()
+}
+
+// gitBranch returns the workspace's current git branch, "" when the
+// workspace is not a repository (or git is unavailable).
+func gitBranch(workspace string) string {
+	out, err := exec.Command("git", "-C", workspace, "rev-parse", "--abbrev-ref", "HEAD").Output()
+	if err != nil {
+		return ""
+	}
+	branch := strings.TrimSpace(string(out))
+	if branch == "HEAD" { // detached HEAD is not a name
+		return ""
+	}
+	return branch
 }
 
 func (m *Model) resizeEditor() {
@@ -437,6 +461,7 @@ func (m *Model) command(input string) []tea.Cmd {
 		}
 	case "/reload":
 		m.skills = discoverSkills(m.workspace, m.skillDirs)
+		m.branch = gitBranch(m.workspace)
 		m.appendBlock(block{kind: blockMeta, text: m.reloadReport()})
 	case "/resume":
 		m.loading = true
@@ -533,7 +558,7 @@ func (m Model) updatePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) loadSession(entry sessionEntry) {
-	blocks, sessionID, err := replaySession(m.workspace, entry)
+	blocks, sessionID, usage, err := replaySession(m.workspace, entry)
 	if err != nil {
 		m.appendBlock(block{kind: blockError, text: "load session: " + err.Error()})
 		m.refresh()
@@ -542,6 +567,11 @@ func (m *Model) loadSession(entry sessionEntry) {
 	m.sessionID = sessionID
 	m.toolBlocks = map[string]int{}
 	m.blocks = blocks
+	m.sessionName = entry.title
+	m.sessionIn, m.sessionOut = usage.in, usage.out
+	m.sessionCached, m.sessionCacheWrite = usage.cached, usage.cacheWrite
+	m.turnIn, m.turnOut = usage.turnIn, usage.turnOut
+	m.turnCached, m.turnCacheWrite = usage.turnCached, usage.turnCacheWrite
 	m.appendBlock(block{kind: blockDivider, text: "resumed session " + short(sessionID) + " — new prompts continue it"})
 	m.refresh()
 }
@@ -581,6 +611,9 @@ func (m *Model) beginTurn(display, prompt string) []tea.Cmd {
 	m.running = true
 	m.turnVerb = pickVerb()
 	m.turnStarted = time.Now()
+	if m.sessionName == "" {
+		m.sessionName = collapse(display, 60)
+	}
 	m.events = make(chan tea.Msg, 256)
 	m.refresh()
 	m.startTurn(prompt)
