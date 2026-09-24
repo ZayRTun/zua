@@ -321,16 +321,19 @@ The doc's Tool Call Border (hot-pink boxes), dashed-border User Prompt,
 and Permission-box sections describe an older Claude Code iteration.
 The current reference screenshots (claude tui 3.png) are authoritative:
 
-- **Tool Card** — borderless. Header `● Name(args)`: dot neutral white,
-  name bold, args muted. Outcome lines each on their own row as
-  `└ text`, muted, hanging-indent wraps, tail `└ +N more`. Collapsed
-  budget: 4 outcome rows; ctrl+o Verbose Transcript shows all. While
-  running the dot is accent; on completion white; failures stay white
-  with the failure in `└ ✗ reason` (red).
-- **User Prompt** — `❯ text` on a full-row Surface highlight bar,
-  every prompt block, no dashed border.
-- **Assistant message** — `●` prefix on the first line, white quiet
-  text. Markdown restyled from glamour's stock dark palette to CC's
+- **Tool Card** — borderless. Header `● Name(args)`: dot green when the
+  call completed, accent while running (spinner activity lives in the
+  turn status row), name bold white, args regular white. Outcome lines
+  each on their own row as `└ text`, muted, hanging-indent wraps, tail
+  `└ +N more`; ✓ green / ✗ red status marks inside the lines.
+  Collapsed budget: 4 outcome rows; ctrl+o Verbose Transcript shows
+  all.
+- **User Prompt** — `❯ text` on a highlight bar spanning prompt + text
+  with trailing pad, NOT the full terminal row. Every prompt block, no
+  dashed border.
+- **Assistant message** — `●` prefix on the first line (the white dot),
+  wrapped lines hanging-indent under the text, white quiet
+  content. Markdown restyled from glamour's stock dark palette to CC's
   quiet look: white body, white headings (no blue), inline code dim
   without loud background chips, muted links; tables and code-fence
   syntax highlighting stay.
