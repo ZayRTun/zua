@@ -566,12 +566,10 @@ func (m *Model) menuItems() []menuItem {
 		if !entry.UserOnly {
 			continue
 		}
-		desc := "skill · user-invoked — zero tokens until used"
-		if entry.Description != "" {
-			desc += " — " + entry.Description
-		}
+		// No redundant boilerplate: /skill:name already says what it is,
+		// so the description is just the skill's own description.
 		name := "/skill:" + entry.Name
-		items = append(items, menuItem{insert: name, display: name, desc: desc})
+		items = append(items, menuItem{insert: name, display: name, desc: entry.Description})
 	}
 	return items
 }
@@ -896,10 +894,11 @@ func (m *Model) viewMenu() string {
 	}
 	for index := start; index < len(matches) && index < start+maxMenuRows; index++ {
 		item := matches[index]
-		// The color highlight alone marks the selected row — no glyph — so
-		// every row aligns on the same two-space indent.
+		// The color highlight marks the selected row — no glyph — but the
+		// accent covers only the name: the description stays plain, so it
+		// reads at normal weight next to the accented command.
 		if index == selected {
-			out = append(out, statusStyle.Render("  "+item.display+"  "+item.desc))
+			out = append(out, "  "+statusStyle.Render(item.display)+"  "+item.desc)
 		} else {
 			out = append(out, dimStyle.Render("  "+item.display+"  "+item.desc))
 		}

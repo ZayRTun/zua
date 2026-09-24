@@ -317,3 +317,13 @@ with a scrolling window around the selection and a (k/total) footer,
 like the menu. The welcome Header stays visible in the viewport behind
 the picker. The welcome Header block renders live on every pass
 (bypasses the per-block cache) so its stats line tracks /reload.
+
+## Design principle: no redundant self-descriptions
+
+If the visible name already carries a piece of information, nothing
+else in the row may repeat it. Concretely: Command Menu skill rows show
+only the skill's own description — no "skill · user-invoked — zero
+tokens until used" boilerplate after "/skill:name" (the prefix already
+says it is a skill, user-invoked is why it is listed, and usage cost is
+documented behavior, not per-row noise). Same rule everywhere chrome
+meets content: strip a label before adding a second one.

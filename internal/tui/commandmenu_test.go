@@ -320,6 +320,11 @@ func TestSkillMenuListsUserInvokedOnly(t *testing.T) {
 	if !strings.Contains(view, "keep a journal") {
 		t.Fatalf("menu missing journal description:\n%s", view)
 	}
+	// No redundant boilerplate: the /skill:name prefix already says what it
+	// is, so the description is just the skill's own description.
+	if strings.Contains(view, "zero tokens") || strings.Contains(view, "skill · user-invoked") {
+		t.Fatalf("skill rows must not repeat the name's information:\n%s", view)
+	}
 	if strings.Contains(view, "/skill:lint-check") {
 		t.Fatalf("model tool surfaced as /skill: entry:\n%s", view)
 	}
@@ -476,8 +481,10 @@ func TestMenuHighlightsSelectedRow(t *testing.T) {
 	lipgloss.SetColorProfile(termenv.ANSI256)
 	defer lipgloss.SetColorProfile(prior)
 	m := typeKeys(t, resize(t, 100, 30), "/")
+	// ↓ once: selection moves to the second entry.
 	current, _ := tea.Model(m).Update(tea.KeyMsg{Type: tea.KeyDown})
 	m = current.(Model)
+	var accentLine string
 	accent, dim := 0, 0
 	for _, line := range strings.Split(m.View(), "\n") {
 		plain := stripANSI(line)
@@ -485,8 +492,9 @@ func TestMenuHighlightsSelectedRow(t *testing.T) {
 			continue // not a menu row
 		}
 		switch {
-		case strings.Contains(line, "[94m"):
+		case strings.Contains(line, "\x1b[94m"):
 			accent++
+			accentLine = line
 		case strings.Contains(line, "\x1b[3;90m"):
 			dim++
 		}
@@ -496,6 +504,13 @@ func TestMenuHighlightsSelectedRow(t *testing.T) {
 	}
 	if dim == 0 {
 		t.Fatalf("the other menu rows must render dim:\n%s", stripANSI(m.View()))
+	}
+	// The accent wraps only the command name; its description stays plain
+	// (unstyled), not accented, not dim.
+	second := commandTable[1].name
+	secondDesc := commandTable[1].desc
+	if !strings.Contains(accentLine, "\x1b[94m"+second+"\x1b[0m  "+secondDesc) {
+		t.Fatalf("accent must cover only the name, desc plain:\n%q", accentLine)
 	}
 }
 
