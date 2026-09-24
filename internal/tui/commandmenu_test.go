@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 
 	"unreal-agent-tui/internal/skills"
 )
@@ -103,13 +104,17 @@ func TestMenuUpDownMovesSelectionNotScroll(t *testing.T) {
 	m = typeKeys(t, m, "/")
 	editorBefore := m.textarea.View() // includes the rendered cursor
 
-	// ↓ once: selection moves to the second entry.
+	// ↓ once: selection moves to the second entry — the highlight, not a
+	// glyph, marks it, so the seam is menuIndex plus the indented row.
 	current, _ = tea.Model(m).Update(tea.KeyMsg{Type: tea.KeyDown})
 	m = current.(Model)
 	view := stripANSI(m.View())
 	second := commandTable[1].name
-	if !strings.Contains(view, "▸ "+second) {
-		t.Fatalf("down did not move selection to %s:\n%s", second, view)
+	if m.menuIndex != 1 {
+		t.Fatalf("down did not move selection to %s: menuIndex=%d", second, m.menuIndex)
+	}
+	if !strings.Contains(view, "  "+second) {
+		t.Fatalf("selection row %s missing from menu:\n%s", second, view)
 	}
 	if m.viewport.YOffset != 3 {
 		t.Fatalf("menu ↓ scrolled the transcript: YOffset=%d", m.viewport.YOffset)
@@ -122,8 +127,8 @@ func TestMenuUpDownMovesSelectionNotScroll(t *testing.T) {
 	current, _ = tea.Model(m).Update(tea.KeyMsg{Type: tea.KeyUp})
 	current, _ = current.Update(tea.KeyMsg{Type: tea.KeyUp})
 	m = current.(Model)
-	if !strings.Contains(stripANSI(m.View()), "▸ "+commandTable[0].name) {
-		t.Fatalf("up did not return selection to %s:\n%s", commandTable[0].name, stripANSI(m.View()))
+	if m.menuIndex != 0 {
+		t.Fatalf("up did not return selection to %s: menuIndex=%d", commandTable[0].name, m.menuIndex)
 	}
 	if m.viewport.YOffset != 3 {
 		t.Fatalf("menu ↑ scrolled the transcript: YOffset=%d", m.viewport.YOffset)
@@ -236,7 +241,7 @@ func TestMenuRespectsWidthAndCappedHeight(t *testing.T) {
 	for _, line := range strings.Split(view, "\n") {
 		plain := stripANSI(line)
 		switch {
-		case strings.HasPrefix(plain, "▸ /"):
+		case strings.HasPrefix(plain, "  /"):
 			inMenu = true
 			menuLines = append(menuLines, line)
 		case inMenu && strings.Contains(plain, "↑/↓ select"): // footer
@@ -380,9 +385,8 @@ func TestSkillMenuUpDownTabRouting(t *testing.T) {
 	m := seedSkills(t, resize(t, 100, 30), dir, extra)
 	m = typeKeys(t, m, "/skill:")
 	m = pressKey(t, m, tea.KeyDown) // select spin-check
-	view := stripANSI(m.View())
-	if !strings.Contains(view, "▸ /skill:spin-check") {
-		t.Fatalf("↓ did not move selection to spin-check:\n%s", view)
+	if m.menuIndex != 1 {
+		t.Fatalf("↓ did not move selection to spin-check: menuIndex=%d", m.menuIndex)
 	}
 	m = pressKey(t, m, tea.KeyTab)
 	if got := m.textarea.Value(); got != "/skill:spin-check " {
@@ -422,7 +426,7 @@ func TestMenuEllipsisAndFooterGap(t *testing.T) {
 		if menuStart == -1 && strings.Contains(line, "start a fresh session") {
 			menuStart = index
 		}
-		if strings.HasPrefix(line, "(1/") {
+		if strings.HasPrefix(line, "(1/") || strings.Contains(line, "(1/") {
 			footerIdx = index
 		}
 	}
@@ -431,6 +435,20 @@ func TestMenuEllipsisAndFooterGap(t *testing.T) {
 	}
 	if footerIdx < 1 || strings.TrimRight(lines[footerIdx-1], " ") != "" {
 		t.Fatalf("footer must sit one blank line below the rows:\n%s", plain)
+	}
+	// No selection glyph: the highlight alone marks the selected row, and
+	// every row — and the footer — aligns on a two-space indent.
+	for _, line := range lines[menuStart:footerIdx] {
+		trimmed := strings.TrimRight(line, " ")
+		if strings.Contains(trimmed, "▸") {
+			t.Fatalf("menu must not render a selection glyph:\n%q", line)
+		}
+		if trimmed != "" && !strings.HasPrefix(trimmed, "  ") {
+			t.Fatalf("menu row must be indented to align:\n%q", line)
+		}
+	}
+	if !strings.HasPrefix(strings.TrimRight(lines[footerIdx], " "), "  (1/") {
+		t.Fatalf("footer must align with the rows:\n%q", lines[footerIdx])
 	}
 	// Any menu row whose actual content spans the full terminal width was
 	// truncated — it must end with the ellipsis, never a hard cut.
@@ -446,5 +464,36 @@ func TestMenuEllipsisAndFooterGap(t *testing.T) {
 	clipped := m.truncateToWidthTail(strings.Repeat("x", 150))
 	if len([]rune(clipped)) != 100 || !strings.HasSuffix(clipped, "...") {
 		t.Fatalf("truncateToWidthTail wrong: width %d, tail %q", len([]rune(clipped)), clipped[len(clipped)-6:])
+	}
+}
+
+// TestMenuHighlightsSelectedRow pins that the color highlight — not a
+// glyph — marks the selected row: under a color profile the selected row
+// alone carries the accent color, every other row renders dim.
+func TestMenuHighlightsSelectedRow(t *testing.T) {
+	prior := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.ANSI256)
+	defer lipgloss.SetColorProfile(prior)
+	m := typeKeys(t, resize(t, 100, 30), "/")
+	current, _ := tea.Model(m).Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = current.(Model)
+	accent, dim := 0, 0
+	for _, line := range strings.Split(m.View(), "\n") {
+		plain := stripANSI(line)
+		if !strings.HasPrefix(plain, "  /") && !strings.HasPrefix(plain, "  (1/") {
+			continue // not a menu row
+		}
+		switch {
+		case strings.Contains(line, "[94m"):
+			accent++
+		case strings.Contains(line, "\x1b[3;90m"):
+			dim++
+		}
+	}
+	if accent != 1 {
+		t.Fatalf("exactly one menu row must carry the accent highlight, found %d:\n%s", accent, stripANSI(m.View()))
+	}
+	if dim == 0 {
+		t.Fatalf("the other menu rows must render dim:\n%s", stripANSI(m.View()))
 	}
 }

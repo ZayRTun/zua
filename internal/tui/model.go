@@ -886,15 +886,18 @@ func (m *Model) viewMenu() string {
 		if index >= maxMenuRows {
 			break
 		}
+		// The color highlight alone marks the selected row — no glyph — so
+		// every row aligns on the same two-space indent.
 		if index == selected {
-			out = append(out, statusStyle.Render("▸ "+item.display)+"  "+item.desc)
+			out = append(out, statusStyle.Render("  "+item.display+"  "+item.desc))
 		} else {
 			out = append(out, dimStyle.Render("  "+item.display+"  "+item.desc))
 		}
 	}
 	footer := fmt.Sprintf("(%d/%d)  ↑/↓ select · Tab complete · Enter accept · Esc dismiss", selected+1, len(matches))
-	// A blank line keeps the footer visually apart from the rows.
-	out = append(out, "", dimStyle.Render(footer))
+	// A blank line keeps the footer visually apart from the rows; its
+	// indent aligns it with the rows above.
+	out = append(out, "", dimStyle.Render("  "+footer))
 	for index := range out {
 		out[index] = m.truncateToWidthTail(out[index])
 	}
