@@ -917,8 +917,10 @@ func (m *Model) viewMenu() string {
 		}
 	}
 	footer := fmt.Sprintf("(%d/%d)  ↑/↓ select · Tab complete · Enter accept · Esc dismiss", selected+1, len(matches))
-	// A blank line keeps the footer visually apart from the rows; its
-	// indent aligns it with the rows above.
+	// Blank lines frame the menu: one above separates it from the
+	// transcript text it floats over, one below keeps the footer apart
+	// from the rows; the footer's indent aligns it with the rows above.
+	out = append([]string{""}, out...)
 	out = append(out, "", dimStyle.Render("  "+footer))
 	for index := range out {
 		out[index] = m.truncateToWidthTail(out[index])

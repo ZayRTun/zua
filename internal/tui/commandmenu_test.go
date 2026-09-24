@@ -415,11 +415,21 @@ func TestSkillMenuClosedWithoutSkills(t *testing.T) {
 	}
 }
 
-// TestMenuEllipsisAndFooterGap pins the Command Menu polish: rows longer
-// than the terminal end with an ellipsis instead of a hard mid-sentence
-// clip, and a blank line separates the rows from the keys footer.
+// TestMenuEllipsisAndFooterGap pins the Command Menu polish: a blank line
+// separates the menu from the transcript above it, rows longer than the
+// terminal end with an ellipsis instead of a hard mid-sentence clip, and a
+// blank line separates the rows from the keys footer.
 func TestMenuEllipsisAndFooterGap(t *testing.T) {
-	m := typeKeys(t, resize(t, 100, 30), "/")
+	// Transcript content above the menu makes the separation real, not
+	// vacuous: enough filler to fill the viewport, so the transcript's last
+	// line ends directly above the menu rows.
+	m := resize(t, 100, 30)
+	var filler []string
+	for i := 0; i < 40; i++ {
+		filler = append(filler, fmt.Sprintf("filler line %02d", i))
+	}
+	m.appendBlock(block{kind: blockUser, text: strings.Join(filler, "\n")})
+	m = typeKeys(t, m, "/")
 	plain := stripANSI(m.View())
 	lines := strings.Split(plain, "\n")
 	menuStart, footerIdx := -1, -1
@@ -433,6 +443,9 @@ func TestMenuEllipsisAndFooterGap(t *testing.T) {
 	}
 	if menuStart == -1 || footerIdx == -1 {
 		t.Fatalf("menu rows or footer missing:\n%s", plain)
+	}
+	if menuStart < 1 || strings.TrimRight(lines[menuStart-1], " ") != "" {
+		t.Fatalf("a blank line must separate the menu from the transcript above:\n%s", plain)
 	}
 	if footerIdx < 1 || strings.TrimRight(lines[footerIdx-1], " ") != "" {
 		t.Fatalf("footer must sit one blank line below the rows:\n%s", plain)

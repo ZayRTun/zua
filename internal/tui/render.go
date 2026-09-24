@@ -477,6 +477,9 @@ func wrap(text string, width int) string {
 func (m Model) viewPicker() string {
 	const maxPickerRows = 8
 	var out []string
+	// A blank line separates the picker from the transcript it floats over,
+	// the same framing the Command Menu gets.
+	out = append(out, "")
 	out = append(out, titleStyle.Render("resume session")+
 		dimStyle.Render("  ↑/↓ select · Enter load · Esc cancel"))
 	out = append(out, strings.Repeat("─", max(m.width, 1)))
